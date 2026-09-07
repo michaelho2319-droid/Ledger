@@ -147,6 +147,10 @@ body.sheet-open{overflow:hidden}
 .chip.ok{border-color:var(--green);color:var(--green)}
 .chip.warn{border-color:var(--amber);color:var(--amber)}
 .chip.over{border-color:var(--red);color:var(--red);background:color-mix(in srgb,var(--red) 10%,transparent)}
+.chips.period{margin:2px 0 10px}
+.chips.period .chip{padding:5px 10px;font-size:12.5px}
+.chip.sel{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.bignum{font-size:28px;font-weight:600;letter-spacing:-.01em;margin:2px 0 0;font-variant-numeric:tabular-nums;display:flex;align-items:center}
 .pbar{display:flex;height:16px;border-radius:8px;overflow:hidden;gap:2px;margin:6px 0 10px}
 .pbar .pseg{height:100%;min-width:3px}
 .crow{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:9px 0;border-bottom:1px solid var(--rule);align-items:center;width:100%;text-align:left}
@@ -162,7 +166,10 @@ body.sheet-open{overflow:hidden}
 .cmp th:first-child,.cmp td:first-child{text-align:left;white-space:normal}
 .cmp th{font-weight:500;color:var(--ink-2);font-size:12px}
 .cmp tr.total td{font-weight:600}
-.flow{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;align-items:end;border-bottom:1px solid var(--rule)}
+.flow{display:grid;grid-template-columns:repeat(var(--n,6),1fr);gap:8px;align-items:end;border-bottom:1px solid var(--rule)}
+.flow.dense{gap:3px}
+.flow.dense .stack{width:7px}
+.flow.dense .bars{gap:2px}
 .flow .m{display:flex;flex-direction:column;align-items:center}
 .flow .bars{display:flex;gap:3px;align-items:flex-end;height:120px;justify-content:center}
 .flow .stack{display:flex;flex-direction:column-reverse;height:100%;width:12px;justify-content:flex-start}
@@ -244,7 +251,7 @@ table.prev{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
 
 <script>
 'use strict';
-const APP_VERSION='0.2.0';
+const APP_VERSION='0.3.0';
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 
@@ -268,7 +275,7 @@ function dbClear(store){return new Promise((res,rej)=>{const t=db.transaction(st
 
 /* ================= state ================= */
 const S={accounts:[],categories:[],transactions:[],budgets:[],rules:[],batches:[],fuel:[],meta:{},
-  tab:'home',month:'',search:'',filterAccount:'',persisted:null,usage:null};
+  tab:'home',month:'',period:1,openDetail:null,search:'',filterAccount:'',persisted:null,usage:null};
 let deferredInstall=null;
 let IMP=null;
 
@@ -299,6 +306,7 @@ function monthShort(mk){const [y,m]=mk.split('-').map(Number);return new Date(y,
 function shiftMonth(mk,delta){const [y,m]=mk.split('-').map(Number);return monthKey(new Date(y,m-1+delta,1));}
 function daysInMonth(mk){const [y,m]=mk.split('-').map(Number);return new Date(y,m,0).getDate();}
 function dateLabel(ds){const [y,m,d]=ds.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString('en-ZA',{day:'2-digit',month:'short'});}
+function dateLabelY(ds){const [y,m,d]=ds.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString('en-ZA',{day:'2-digit',month:'short',year:'numeric'});}
 function longDate(ds){const [y,m,d]=ds.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString('en-ZA',{day:'numeric',month:'long'});}
 function daysBetween(a,b){return Math.round((new Date(b+'T00:00:00')-new Date(a+'T00:00:00'))/86400000);}
 function addDays(ds,n){const d=new Date(ds+'T00:00:00');d.setDate(d.getDate()+n);return ymd(d);}
@@ -462,6 +470,41 @@ function payeeOptions(){
   return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,300).map(([p])=>`<option value="${esc(p)}">`).join('');
 }
 
+/* ================= periods ================= */
+const PERIODS=[[1,'Month'],[3,'3 months'],[6,'6 months'],[12,'12 months'],['ytd','Year to date'],['all','All time']];
+function periodMonths(mk,p){
+  p=p||S.period;const out=[];
+  if(p==='ytd'){const y=mk.slice(0,4);for(let m=1;m<=Number(mk.slice(5));m++)out.push(y+'-'+pad(m));return out;}
+  if(p==='all'){let first=mk;for(const t of live()){const m=t.date.slice(0,7);if(m<first)first=m;}for(let m=first;m<=mk;m=shiftMonth(m,1))out.push(m);return out;}
+  for(let i=p-1;i>=0;i--)out.push(shiftMonth(mk,-i));return out;
+}
+function periodLabel(mk,p){
+  p=p||S.period;const ms=periodMonths(mk,p);
+  if(p===1)return monthLabel(mk);
+  if(p==='ytd')return `${mk.slice(0,4)} to date`;
+  if(p==='all')return `all time, since ${monthShort(ms[0])} ${ms[0].slice(0,4)}`;
+  const a=ms[0];return `${monthShort(a)}${a.slice(0,4)!==mk.slice(0,4)?' '+a.slice(0,4):''} to ${monthShort(mk)}`;
+}
+function periodPhrase(mk,p){
+  p=p||S.period;const cur=todayStr().slice(0,7);
+  if(p===1)return mk===cur?`so far in ${monthName(mk)}`:`in ${monthLabel(mk)}`;
+  if(p==='ytd')return `so far in ${mk.slice(0,4)}`;
+  if(p==='all')return 'all time';
+  return `over ${periodLabel(mk,p)}`;
+}
+function periodBar(){return `<div class="chips period">${PERIODS.map(([p,l])=>`<button class="chip ${String(S.period)===String(p)?'sel':''}" data-act="period" data-p="${p}">${l}</button>`).join('')}</div>`;}
+function prevPeriodMonths(months){const out=[];for(let i=months.length;i>=1;i--)out.push(shiftMonth(months[0],-i));return out;}
+function leafMapFor(months){const set=new Set(months);const leaf={};for(const t of live()){if(!set.has(t.date.slice(0,7))||!isSpend(t))continue;leaf[t.categoryId]=(leaf[t.categoryId]||0)-t.amount;}return leaf;}
+function rollupFor(leaf,catId){let v=leaf[catId]||0;for(const c of childrenOf(catId))v+=leaf[c.id]||0;return v;}
+function topMapFor(leaf){const m={};for(const [id,v] of Object.entries(leaf)){const t=topOf(id);const k=t?t.id:'cat_uncat';m[k]=(m[k]||0)+v;}return m;}
+function totalsFor(months){let income=0,spent=0;const set=new Set(months);for(const t of live()){if(!set.has(t.date.slice(0,7))||isTransfer(t))continue;if(isSpend(t))spent-=t.amount;else income+=t.amount;}return {income,spent};}
+function payeesFor(months,catId){const set=new Set(months);const m={};for(const t of live()){if(!set.has(t.date.slice(0,7))||!isSpend(t)||t.amount>=0)continue;if(catId&&!inCat(t,catId))continue;const k=t.payee||'Unknown';if(!m[k])m[k]={payee:k,amount:0,count:0};m[k].amount-=t.amount;m[k].count++;}return Object.values(m).sort((a,b)=>b.amount-a.amount);}
+function monthBars(months,valueFn,color){
+  const ms=months.length>24?months.slice(-24):months;const n=ms.length;const vals=ms.map(valueFn);
+  const max=Math.max(1,...vals.map(v=>v.projected||v.value));const every=n>12?3:n>8?2:1;
+  return `<div class="flow ${n>12?'dense':''}" style="--n:${n}">${ms.map((m,i)=>{const v=vals[i];const extra=v.projected&&v.projected>v.value?v.projected-v.value:0;return `<div class="m"><div class="bars"><div class="stack"><i class="o" style="height:${(v.value/max*100).toFixed(1)}%;background:${color}" title="${monthShort(m)} ${fmt(v.value)}"></i>${extra?`<i class="p" style="height:${(extra/max*100).toFixed(1)}%"></i>`:''}</div></div><div class="lbl">${i%every===0||i===n-1?monthShort(m):''}</div></div>`;}).join('')}</div>`;
+}
+
 /* ================= insights ================= */
 function insights(mk){
   const out=[];const tot=monthTotals(mk);const today=todayStr(),cur=today.slice(0,7);const pr=projectionFor(mk);const mn=monthName(mk);
@@ -511,9 +554,9 @@ function toast(msg,opts={}){
 }
 function openSheet(title,body,foot){
   $('#sheetTitle').textContent=title;$('#sheetBody').innerHTML=body;$('#sheetFoot').innerHTML=foot||'';
-  $('#sheet').hidden=false;document.body.classList.add('sheet-open');$('#sheetBody').scrollTop=0;
+  $('#sheet').hidden=false;document.body.classList.add('sheet-open');$('#sheetBody').scrollTop=0;S.openDetail=null;
 }
-function closeSheet(){$('#sheet').hidden=true;document.body.classList.remove('sheet-open');IMP=null;}
+function closeSheet(){$('#sheet').hidden=true;document.body.classList.remove('sheet-open');IMP=null;S.openDetail=null;}
 function applyTheme(){const t=S.meta.theme||'';if(t)document.documentElement.dataset.theme=t;else delete document.documentElement.dataset.theme;}
 function render(){
   $$('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===S.tab));
@@ -527,7 +570,7 @@ function onboardingHero(){return `<section class="hero"><h1>Start with an accoun
 function todayMarker(mk){const today=todayStr(),cur=today.slice(0,7);const pct=mk===cur?Number(today.slice(8))/daysInMonth(mk)*100:(mk<cur?100:0);return pct>0&&pct<100?`<div class="today" style="left:${pct.toFixed(1)}%" title="Today"></div>`:'';}
 function proportionBar(entries){
   const total=entries.reduce((s,e)=>s+Math.max(0,e.value),0);if(!total)return '';
-  return `<div class="pbar">${entries.map(e=>`<button class="pseg" data-act="cat-detail" data-id="${e.id}" style="width:${(Math.max(0,e.value)/total*100).toFixed(2)}%;background:${e.color};opacity:${e.opacity??1}" title="${esc(e.name)} ${fmtShort(e.value)}" aria-label="${esc(e.name)} ${fmtShort(e.value)}"></button>`).join('')}</div>`;
+  return `<div class="pbar">${entries.map(e=>`<button class="pseg" data-act="${e.act||'cat-detail'}" data-id="${esc(e.id)}"${e.cat?` data-cat="${esc(e.cat)}"`:''} style="width:${(Math.max(0,e.value)/total*100).toFixed(2)}%;background:${e.color};opacity:${e.opacity??1}" title="${esc(e.name)} ${fmtShort(e.value)}" aria-label="${esc(e.name)} ${fmtShort(e.value)}"></button>`).join('')}</div>`;
 }
 function limitBar(spent,limit,color,projected){
   if(!limit)return '';
@@ -535,12 +578,7 @@ function limitBar(spent,limit,color,projected){
   const tick=projected&&projected>spent&&projected/limit<1?`<div class="tick" style="left:${(projected/limit*100).toFixed(1)}%" title="Projected"></div>`:'';
   return `<div class="bar"><div class="${st}" style="width:${pct.toFixed(1)}%;background:${color}"></div>${tick}</div>`;
 }
-function sixMonthBars(mk,valueFn,color){
-  const months=[];for(let i=5;i>=0;i--)months.push(shiftMonth(mk,-i));
-  const vals=months.map(valueFn);
-  const max=Math.max(1,...vals.map(v=>v.projected||v.value));
-  return `<div class="flow">${months.map((m,i)=>{const v=vals[i];const extra=v.projected&&v.projected>v.value?v.projected-v.value:0;return `<div class="m"><div class="bars"><div class="stack"><i class="o" style="height:${(v.value/max*100).toFixed(1)}%;background:${color}"></i>${extra?`<i class="p" style="height:${(extra/max*100).toFixed(1)}%"></i>`:''}</div></div><div class="lbl">${monthShort(m)}</div></div>`;}).join('')}</div>`;
-}
+function sixMonthBars(mk,valueFn,color){return monthBars(periodMonths(mk,6),valueFn,color);}
 
 /* ================= Home (dashboard) ================= */
 function viewHome(){
@@ -563,20 +601,24 @@ function viewHome(){
   const insHTML=ins.length?`<div class="section"><h3>What stands out</h3>${ins.map(i=>{const act=i.id?`data-act="cat-detail" data-id="${i.id}"`:i.tab?`data-act="tab" data-tab="${i.tab}"`:'';const tag=act?'button':'div';return `<${tag} class="insight ${i.tone}" ${act}><i></i><span>${esc(i.text)}</span></${tag}>`;}).join('')}</div>`:'';
   const limited=cats().filter(c=>!c.system&&!isIncomeCat(c.id)&&effectiveLimit(c.id,mk).amount>0).filter(c=>!c.parentId||!effectiveLimit(c.parentId,mk).amount||limitFor(c.id,mk));
   const chips=limited.length?`<div class="section"><h3>Limits</h3><div class="chips">${limited.map(c=>{const l=effectiveLimit(c.id,mk).amount,s=spentFor(c.id,mk);const st=statusOf(s,l);return `<button class="chip ${st}" data-act="cat-detail" data-id="${c.id}"><i class="swatch" style="background:${colorOf(c.id)}"></i>${esc(c.name)} <b>${Math.round(s/l*100)}%</b></button>`;}).join('')}</div></div>`:'';
-  const st=spentTop(mk),prev=shiftMonth(mk,-1),stPrev=spentTop(prev);
+  const months=periodMonths(mk);const multi=months.length>1;const prev=shiftMonth(mk,-1);
+  const st=topMapFor(leafMapFor(months));
+  const prevLabel=multi?((S.period==='ytd'||S.period==='all')?'':`previous ${months.length} months`):monthShort(prev);
+  const stPrev=prevLabel?topMapFor(leafMapFor(multi?prevPeriodMonths(months):[prev])):{};
   const entries=topCats().filter(c=>!c.income).map(c=>({id:c.id,name:c.name,color:c.color,value:st[c.id]||0})).filter(e=>e.value>0).sort((a,b)=>b.value-a.value);
   if(st.cat_uncat>0)entries.push({id:'cat_uncat',name:'Uncategorised',color:NEUTRAL,value:st.cat_uncat});
   const total=entries.reduce((s,e)=>s+e.value,0);
-  const rows=entries.map(e=>`<button class="crow" data-act="cat-detail" data-id="${e.id}"><span class="cname"><i class="swatch" style="background:${e.color}"></i><span>${esc(e.name)}</span><span class="pct">${Math.round(e.value/total*100)}%</span></span><span class="amt">${fmt(e.value)}</span><span class="cdelta">${deltaHTML(e.value,stPrev[e.id]||0,monthShort(prev))}</span></button>`).join('');
-  const where=`<div class="section"><h3>Where it goes<small>tap a category</small></h3>${entries.length?proportionBar(entries)+rows:`<p class="empty">No spending in ${monthLabel(mk)} yet.</p>`}</div>`;
+  const rows=entries.map(e=>{const sub=multi?`${fmtShort(e.value/months.length)} a month${prevLabel?', ':''}`:'';return `<button class="crow" data-act="cat-detail" data-id="${e.id}"><span class="cname"><i class="swatch" style="background:${e.color}"></i><span>${esc(e.name)}</span><span class="pct">${Math.round(e.value/total*100)}%</span></span><span class="amt">${fmt(e.value)}</span><span class="cdelta">${sub}${prevLabel?deltaHTML(e.value,stPrev[e.id]||0,prevLabel):''}</span></button>`;}).join('');
+  const ptot=totalsFor(months);
+  const where=`<div class="section"><h3>Where it goes<small>${periodLabel(mk)}</small></h3>${periodBar()}${multi?`<div class="totals"><span>Spent ${fmtShort(ptot.spent)}</span><span>${fmtShort(ptot.spent/months.length)} a month</span><span>In ${fmtShort(ptot.income)}</span></div>`:''}${entries.length?proportionBar(entries)+rows:`<p class="empty">No spending ${periodPhrase(mk)}.</p>`}</div>`;
   const cmpRows=topCats().filter(c=>!c.income).map(c=>({c,now:spentFor(c.id,mk),last:spentFor(c.id,prev),avg:avgPrev3(c.id,mk)})).filter(r=>r.now||r.last||r.avg);
   const totLast=monthTotals(prev).spent,totAvg=[1,2,3].map(i=>monthTotals(shiftMonth(mk,-i)).spent).filter(v=>v>0);
   const cmp=cmpRows.length?`<div class="section"><h3>Compared with previous months</h3><table class="cmp"><thead><tr><th>Category</th><th>${monthShort(mk)}</th><th>${monthShort(prev)}</th><th>3-mo avg</th></tr></thead><tbody>${cmpRows.map(r=>`<tr><td><i class="swatch" style="background:${r.c.color}"></i>${esc(r.c.name)}</td><td class="${r.now>r.avg&&r.avg?'up':''}">${fmtShort(r.now)}</td><td>${fmtShort(r.last)}</td><td>${r.avg?fmtShort(r.avg):'—'}</td></tr>`).join('')}<tr class="total"><td>Total</td><td>${fmtShort(tot.spent)}</td><td>${fmtShort(totLast)}</td><td>${totAvg.length?fmtShort(totAvg.reduce((a,b)=>a+b,0)/totAvg.length):'—'}</td></tr></tbody></table></div>`:'';
-  const months=[];for(let i=5;i>=0;i--)months.push(shiftMonth(mk,-i));
-  const flows=months.map(m=>{const t=monthTotals(m);const p=m===mk&&pr&&!pr.final&&pr.elapsed>=3?pr.projected:0;return {m,...t,projected:p};});
+  const flowMonths=multi?months.slice(-24):periodMonths(mk,6);const n=flowMonths.length;const every=n>12?3:n>8?2:1;
+  const flows=flowMonths.map(m=>{const t=monthTotals(m);const p=m===mk&&pr&&!pr.final&&pr.elapsed>=3?pr.projected:0;return {m,...t,projected:p};});
   const fmax=Math.max(1,...flows.map(f=>Math.max(f.income,f.spent,f.projected)));
-  const flow=`<div class="section"><h3>In and out, six months</h3><div class="flow">${flows.map(f=>{const extra=f.projected>f.spent?f.projected-f.spent:0;return `<div class="m"><div class="bars"><div class="stack"><i class="i" style="height:${(f.income/fmax*100).toFixed(1)}%" title="In ${fmt(f.income)}"></i></div><div class="stack"><i class="o" style="height:${(f.spent/fmax*100).toFixed(1)}%" title="Out ${fmt(f.spent)}"></i>${extra?`<i class="p" style="height:${(extra/fmax*100).toFixed(1)}%" title="Projected ${fmt(f.projected)}"></i>`:''}</div></div><div class="lbl">${monthShort(f.m)}</div></div>`;}).join('')}</div>
-    <div class="legend"><span><i style="background:var(--green)"></i>In</span><span><i style="background:var(--ink-2)"></i>Out</span><span><i class="p"></i>Projected</span><span style="margin-left:auto">${monthShort(mk)} net ${fmtShort(tot.income-tot.spent)}</span></div></div>`;
+  const flow=`<div class="section"><h3>In and out<small>${multi?periodLabel(mk):'six months'}</small></h3><div class="flow ${n>12?'dense':''}" style="--n:${n}">${flows.map((f,i)=>{const extra=f.projected>f.spent?f.projected-f.spent:0;return `<div class="m"><div class="bars"><div class="stack"><i class="i" style="height:${(f.income/fmax*100).toFixed(1)}%" title="In ${fmt(f.income)}"></i></div><div class="stack"><i class="o" style="height:${(f.spent/fmax*100).toFixed(1)}%" title="Out ${fmt(f.spent)}"></i>${extra?`<i class="p" style="height:${(extra/fmax*100).toFixed(1)}%" title="Projected ${fmt(f.projected)}"></i>`:''}</div></div><div class="lbl">${i%every===0||i===n-1?monthShort(f.m):''}</div></div>`;}).join('')}</div>
+    <div class="legend"><span><i style="background:var(--green)"></i>In</span><span><i style="background:var(--ink-2)"></i>Out</span><span><i class="p"></i>Projected</span><span style="margin-left:auto">${multi?'Period':monthShort(mk)} net ${fmtShort(ptot.income-ptot.spent)}</span></div></div>`;
   let net=0;
   const accts=S.accounts.map(a=>{const b=accountBalance(a);net+=b;return `<div class="krow"><span>${esc(a.name)}<span class="sub">${ACCOUNT_TYPES[a.type]||''}</span></span><span class="amt ${b<0?'bad':''}">${fmt(b)}</span></div>`;}).join('');
   const bal=`<div class="section"><h3>Balances</h3>${accts}<div class="krow total"><span>Net worth</span><span class="amt ${net<0?'bad':''}">${fmt(net)}</span></div></div>`;
@@ -584,56 +626,83 @@ function viewHome(){
 }
 
 /* ================= category detail ================= */
+function rowHTML(t,showDate){
+  const acc=accById(t.accountId);const cls=isTransfer(t)?'tr':t.amount>0?'in':'';
+  const dot=(t.source==='import'||t.source==='sms')&&!t.reviewed?'<i class="dot" title="Not reviewed yet"></i>':'';
+  const date=showDate==='full'?dateLabelY(t.date):showDate?dateLabel(t.date):'';
+  return `<button class="row" data-act="edit-txn" data-id="${t.id}"><span class="date">${date}</span><span class="main"><span class="payee">${dot}${esc(t.payee||catName(t.categoryId))}</span><span class="meta"><i class="swatch" style="background:${colorOf(t.categoryId)};width:7px;height:7px;margin-right:6px"></i>${esc(catName(t.categoryId))}<span class="acc">${esc(acc?.name||'')}</span></span></span><span class="amt ${cls}">${fmt(t.amount)}</span></button>`;
+}
 function openCatDetail(id){
   const c=catById(id);if(!c)return;
-  const mk=S.month;const color=colorOf(id);const kids=childrenOf(id);const leaf=spentLeaf(mk);
-  const s=spentFor(id,mk);const lim=effectiveLimit(id,mk);const pr=projectionFor(mk,id);const st=statusOf(s,lim.amount);
-  const status=lim.amount?(s>lim.amount?`<span class="bad">${fmtShort(s-lim.amount)} over the ${fmtShort(lim.amount)} limit</span>`:`<span class="${st==='warn'?'warn':''}">${fmtShort(lim.amount-s)} left of ${fmtShort(lim.amount)}${lim.derived?' (sum of sub-categories)':''}</span>`):'No limit set';
-  const proj=pr&&!pr.final&&pr.elapsed>=3&&s?`<p class="note">Heading for about ${fmtShort(pr.projected)} by month end${lim.amount&&pr.projected>lim.amount?', past the limit':''}.</p>`:'';
-  const prev=shiftMonth(mk,-1);
-  const bars=sixMonthBars(mk,m=>({value:spentFor(id,m),projected:m===mk&&pr&&!pr.final&&pr.elapsed>=3?pr.projected:0}),color);
+  const mk=S.month;const color=colorOf(id);const kids=childrenOf(id);
+  const months=periodMonths(mk);const multi=months.length>1;const leaf=leafMapFor(months);const set=new Set(months);
+  const s=rollupFor(leaf,id);
+  const prevLabel=multi?((S.period==='ytd'||S.period==='all')?'':`previous ${months.length} months`):monthShort(shiftMonth(mk,-1));
+  const sPrev=prevLabel?rollupFor(leafMapFor(multi?prevPeriodMonths(months):[shiftMonth(mk,-1)]),id):0;
+  const sm=spentFor(id,mk);const lim=effectiveLimit(id,mk);const pr=projectionFor(mk,id);const st=statusOf(sm,lim.amount);
+  const limitLine=lim.amount?(sm>lim.amount?`<span class="bad">${fmtShort(sm-lim.amount)} over the ${fmtShort(lim.amount)} limit for ${monthName(mk)}</span>`:`<span class="${st==='warn'?'warn':''}">${fmtShort(lim.amount-sm)} left of the ${fmtShort(lim.amount)} limit for ${monthName(mk)}${lim.derived?' (sum of sub-categories)':''}</span>`):`No limit set for ${monthName(mk)}`;
+  const proj=pr&&!pr.final&&pr.elapsed>=3&&sm?`<p class="note">Heading for about ${fmtShort(pr.projected)} by month end${lim.amount&&pr.projected>lim.amount?', past the limit':''}.</p>`:'';
+  const head=`<div class="bignum"><i class="swatch" style="background:${color}"></i><span class="num">${fmtShort(s)}</span></div><p class="note" style="margin-top:2px">spent ${periodPhrase(mk)}${multi?`, ${fmtShort(s/months.length)} a month`:''}${prevLabel?`. ${deltaHTML(s,sPrev,prevLabel)}`:''}</p>${periodBar()}`;
+  const bars=monthBars(multi?months:periodMonths(mk,6),m=>({value:spentFor(id,m),projected:m===mk&&pr&&!pr.final&&pr.elapsed>=3?pr.projected:0}),color);
   const avg=avgPrev3(id,mk);
-  const cmp=`<div class="totals"><span>${monthShort(mk)} ${fmtShort(s)}</span><span>${monthShort(prev)} ${fmtShort(spentFor(id,prev))}</span><span>3-mo avg ${avg?fmtShort(avg):'—'}</span></div>`;
+  const cmp=`<div class="totals"><span>${monthShort(mk)} ${fmtShort(sm)}</span><span>${monthShort(shiftMonth(mk,-1))} ${fmtShort(spentFor(id,shiftMonth(mk,-1)))}</span><span>3-mo avg ${avg?fmtShort(avg):'—'}</span></div>`;
   let subs='';
   if(kids.length){
     const entries=kids.map((k,i)=>({id:k.id,name:k.name,color,opacity:1-Math.min(0.6,i*0.14),value:leaf[k.id]||0}));
     if(leaf[id]>0)entries.push({id,name:c.name+' (general)',color:NEUTRAL,value:leaf[id]});
-    const tot=entries.reduce((a,e)=>a+Math.max(0,e.value),0);
-    const bar=proportionBar(entries);
-    subs=`<div class="section"><h3>Sub-categories</h3>${bar}${entries.sort((a,b)=>b.value-a.value).map(e=>`<button class="crow" data-act="cat-detail" data-id="${e.id}"><span class="cname"><i class="swatch" style="background:${e.color};opacity:${e.opacity??1}"></i><span>${esc(e.name)}</span>${tot?`<span class="pct">${Math.round(Math.max(0,e.value)/tot*100)}%</span>`:''}</span><span class="amt">${fmt(e.value)}</span>${limitFor(e.id,mk)?limitBar(e.value,limitFor(e.id,mk),color):''}</button>`).join('')}</div>`;
+    const tot=entries.reduce((a,e)=>a+Math.max(0,e.value),0);const bar=proportionBar(entries);
+    subs=`<div class="section"><h3>Sub-categories<small>${periodLabel(mk)}</small></h3>${bar}${entries.sort((a,b)=>b.value-a.value).map(e=>`<button class="crow" data-act="cat-detail" data-id="${e.id}"><span class="cname"><i class="swatch" style="background:${e.color};opacity:${e.opacity??1}"></i><span>${esc(e.name)}</span>${tot?`<span class="pct">${Math.round(Math.max(0,e.value)/tot*100)}%</span>`:''}</span><span class="amt">${fmt(e.value)}</span>${!multi&&limitFor(e.id,mk)?limitBar(e.value,limitFor(e.id,mk),color):''}</button>`).join('')}</div>`;
   }
-  const txns=live().filter(t=>inMonth(t,mk)&&inCat(t,id)&&!isTransfer(t)).sort((a,b)=>b.date.localeCompare(a.date));
-  const list=txns.length?`<div class="ledger">${txns.map(t=>`<button class="row" data-act="edit-txn" data-id="${t.id}"><span class="date">${dateLabel(t.date)}</span><span class="main"><span class="payee">${esc(t.payee||catName(t.categoryId))}</span><span class="meta">${esc(catName(t.categoryId))}<span class="acc">${esc(accById(t.accountId)?.name||'')}</span></span></span><span class="amt ${t.amount>0?'in':''}">${fmt(t.amount)}</span></button>`).join('')}</div>`:`<p class="empty">Nothing here in ${monthLabel(mk)}.</p>`;
-  const html=`<p class="note" style="margin-top:0"><i class="swatch" style="background:${color}"></i>${status}</p>${limitBar(s,lim.amount,color,pr&&!pr.final?pr.projected:0)}${proj}
-    <div class="section"><h3>Last six months</h3>${bars}${cmp}</div>
+  const shops=payeesFor(months,id);const showShops=S.meta.showShops===true;const stot=shops.reduce((a,x)=>a+x.amount,0)||1;
+  const shopsHTML=shops.length?`<div class="section"><h3>Shops<small>${shops.length}, ${periodLabel(mk)}</small></h3>${showShops
+    ?proportionBar(shops.slice(0,8).map((x,i)=>({id:x.payee,cat:id,act:'payee-detail',name:x.payee,color,opacity:1-Math.min(0.7,i*0.1),value:x.amount})))+shops.slice(0,25).map(x=>`<button class="crow" data-act="payee-detail" data-id="${esc(x.payee)}" data-cat="${id}"><span class="cname"><span>${esc(x.payee)}</span><span class="pct">${Math.round(x.amount/stot*100)}%</span></span><span class="amt">${fmt(x.amount)}</span><span class="cdelta">${x.count} ${x.count===1?'visit':'visits'}, ${fmtShort(x.amount/x.count)} each</span></button>`).join('')+(shops.length>25?`<p class="note">Showing 25 of ${shops.length}.</p>`:'')+`<div class="actions"><button class="btn small" data-act="show-shops" data-on="0">Hide shops</button></div>`
+    :`<p class="note">See exactly which shops this went to, and tap one for its history.</p><div class="actions"><button class="btn small" data-act="show-shops" data-on="1">Show shops</button></div>`}</div>`:'';
+  const txns=live().filter(t=>set.has(t.date.slice(0,7))&&inCat(t,id)&&!isTransfer(t)).sort((a,b)=>b.date.localeCompare(a.date));
+  const full=multi&&months[0].slice(0,4)!==mk.slice(0,4);
+  const list=txns.length?`<div class="ledger">${txns.slice(0,100).map(t=>rowHTML(t,full?'full':true)).join('')}</div>${txns.length>100?`<p class="note">Showing 100 of ${txns.length}.</p>`:''}`:`<p class="empty">Nothing here ${periodPhrase(mk)}.</p>`;
+  const html=`${head}<p class="note">${limitLine}</p>${!multi?limitBar(sm,lim.amount,color,pr&&!pr.final?pr.projected:0):''}${proj}
+    <div class="section"><h3>${multi?'Month by month':'Last six months'}</h3>${bars}${cmp}</div>
     <div class="field" style="margin-top:16px"><label for="cdLimit">Limit for ${monthName(mk)} (rand)</label><input id="cdLimit" inputmode="decimal" value="${limitFor(id,mk)?(limitFor(id,mk)/100).toFixed(0):''}" placeholder="${lim.derived&&lim.amount?(lim.amount/100).toFixed(0)+' from sub-categories':'No limit'}"></div>
-    ${subs}<div class="section"><h3>Transactions<small>${monthShort(mk)}</small></h3>${list}</div>`;
+    ${subs}${shopsHTML}<div class="section"><h3>Transactions<small>${periodLabel(mk)}</small></h3>${list}</div>`;
   openSheet(fullName(id),html,`<button class="btn" data-act="close-sheet">Done</button>${c.system?'':`<button class="btn primary" data-act="edit-category" data-id="${id}">Edit category</button>`}`);
+  S.openDetail={type:'cat',id};
   $('#cdLimit').onchange=async()=>{const v=parseAmountInput($('#cdLimit').value);await setBudget(id,mk,v==null?0:v);openCatDetail(id);render();toast('Limit saved');};
+}
+function openPayeeDetail(payee,catId){
+  const mk=S.month;const months=periodMonths(mk);const multi=months.length>1;const set=new Set(months);
+  const all=live().filter(t=>isSpend(t)&&(t.payee||'Unknown')===payee&&(!catId||inCat(t,catId))).sort((a,b)=>b.date.localeCompare(a.date));
+  const txns=all.filter(t=>set.has(t.date.slice(0,7)));
+  const total=txns.reduce((a,t)=>a-t.amount,0);const count=txns.filter(t=>t.amount<0).length;
+  const color=catId?colorOf(catId):NEUTRAL;const first=all[all.length-1];
+  const bars=monthBars(multi?months:periodMonths(mk,6),m=>({value:all.filter(t=>t.date.startsWith(m)).reduce((a,t)=>a-t.amount,0)}),color);
+  const head=`<div class="bignum"><span class="num">${fmtShort(total)}</span></div><p class="note" style="margin-top:2px">${count} ${count===1?'visit':'visits'} ${periodPhrase(mk)}${count?`, ${fmtShort(total/count)} each`:''}${first?`. First seen ${dateLabelY(first.date)}.`:''}</p>${periodBar()}`;
+  const full=multi&&months[0].slice(0,4)!==mk.slice(0,4);
+  const html=`${head}<div class="section"><h3>${multi?'Month by month':'Last six months'}</h3>${bars}</div><div class="section"><h3>Transactions<small>${periodLabel(mk)}</small></h3>${txns.length?`<div class="ledger">${txns.slice(0,100).map(t=>rowHTML(t,full?'full':true)).join('')}</div>${txns.length>100?`<p class="note">Showing 100 of ${txns.length}.</p>`:''}`:`<p class="empty">Nothing ${periodPhrase(mk)}.</p>`}</div>`;
+  openSheet(payee,html,`<button class="btn" id="pdBack">${catId?'Back':'Done'}</button><button class="btn primary" id="pdRule">Rule for this shop</button>`);
+  S.openDetail={type:'payee',payee,catId};
+  $('#pdBack').onclick=()=>catId?openCatDetail(catId):closeSheet();
+  $('#pdRule').onclick=()=>openRuleSheet(null,{match:payee,categoryId:txns[0]?.categoryId||catId||null});
 }
 
 /* ================= Ledger (transactions) ================= */
 function txnListHTML(){
-  let list=live().filter(t=>inMonth(t,S.month));
+  const months=periodMonths(S.month);const set=new Set(months);const multi=months.length>1;
+  let list=live().filter(t=>set.has(t.date.slice(0,7)));
   if(S.filterAccount)list=list.filter(t=>t.accountId===S.filterAccount);
   const q=S.search.trim().toLowerCase();
   if(q)list=list.filter(t=>[t.payee,t.note,t.bankDescription,catName(t.categoryId)].some(v=>v&&v.toLowerCase().includes(q)));
-  if(!list.length){if(!S.accounts.length)return '';return `<p class="empty">${q||S.filterAccount?'Nothing matches.':`Nothing in ${monthLabel(S.month)} yet. Tap Add, share a bank SMS to Ledger, or import a statement under More.`}</p>`;}
+  if(!list.length){if(!S.accounts.length)return '';return `<p class="empty">${q||S.filterAccount?'Nothing matches.':`Nothing ${periodPhrase(S.month)} yet. Tap Add, share a bank SMS to Ledger, or import a statement under More.`}</p>`;}
   list.sort((a,b)=>b.date.localeCompare(a.date)||(b.createdAt||'').localeCompare(a.createdAt||''));
+  const full=multi&&months[0].slice(0,4)!==S.month.slice(0,4);
   let html='<div class="ledger">',last='';
-  for(const t of list){
-    const first=t.date!==last;last=t.date;
-    const acc=accById(t.accountId);const cls=isTransfer(t)?'tr':t.amount>0?'in':'';
-    const dot=(t.source==='import'||t.source==='sms')&&!t.reviewed?'<i class="dot" title="Not reviewed yet"></i>':'';
-    html+=`<button class="row" data-act="edit-txn" data-id="${t.id}"><span class="date">${first?dateLabel(t.date):''}</span><span class="main"><span class="payee">${dot}${esc(t.payee||catName(t.categoryId))}</span><span class="meta"><i class="swatch" style="background:${colorOf(t.categoryId)};width:7px;height:7px;margin-right:6px"></i>${esc(catName(t.categoryId))}<span class="acc">${esc(acc?.name||'')}</span></span></span><span class="amt ${cls}">${fmt(t.amount)}</span></button>`;
-  }
-  return html+'</div>';
+  for(const t of list.slice(0,300)){const first=t.date!==last;last=t.date;html+=rowHTML(t,first?(full?'full':true):false);}
+  return html+'</div>'+(list.length>300?`<p class="note">Showing 300 of ${list.length}. Use search to narrow it down.</p>`:'');
 }
 function viewLedger(){
   if(!S.accounts.length)return `${monthNav()}${onboardingHero()}`;
-  const tot=monthTotals(S.month);
+  const months=periodMonths(S.month);const tot=totalsFor(months);
   const filters=`<div class="filters"><input id="search" type="search" placeholder="Search" value="${esc(S.search)}"><select id="filterAcc"><option value="">All accounts</option>${S.accounts.map(a=>`<option value="${a.id}" ${a.id===S.filterAccount?'selected':''}>${esc(a.name)}</option>`).join('')}</select></div>`;
-  return `${monthNav()}<div class="totals"><span>In ${fmtShort(tot.income)}</span><span>Out ${fmtShort(tot.spent)}</span><span>Net ${fmtShort(tot.income-tot.spent)}</span></div>${filters}<div id="txlist">${txnListHTML()}</div>`;
+  return `${monthNav()}${periodBar()}<div class="totals"><span>In ${fmtShort(tot.income)}</span><span>Out ${fmtShort(tot.spent)}</span><span>Net ${fmtShort(tot.income-tot.spent)}</span></div>${filters}<div id="txlist">${txnListHTML()}</div>`;
 }
 
 /* ================= Limits (budget) ================= */
@@ -710,9 +779,9 @@ function viewFuel(){
     <div class="tile"><div class="v">${fmtKm(now.km)}</div><div class="l">Driven, ${monthShort(mk)}</div>${d(now.km,prev.km)}</div>
     <div class="tile"><div class="v">${now.ppl?fmt(now.ppl)+'/L':'—'}</div><div class="l">Average price paid</div>${d(now.ppl,prev.ppl)}</div>
     <div class="tile"><div class="v">${cons?fmtNum(cons,1)+' L/100km':'—'}</div><div class="l">Consumption${now.costPerKm?`, ${fmt(now.costPerKm)}/km`:''}</div></div></div>`;
-  const months=[];for(let i=5;i>=0;i--)months.push(shiftMonth(mk,-i));
+  const pm=periodMonths(mk);const months=pm.length>6?pm.slice(-24):periodMonths(mk,6);
   const stats=months.map(m=>({m,...fuelStats(m)}));
-  const table=`<div class="section"><h3>Month by month</h3>${sixMonthBars(mk,m=>({value:fuelStats(m).cost}),colorOf(fuelCatId()))}<table class="cmp"><thead><tr><th>Month</th><th>km</th><th>Litres</th><th>R/L</th><th>Spend</th></tr></thead><tbody>${stats.filter(s=>s.n).map(s=>`<tr><td>${monthShort(s.m)}</td><td>${Math.round(s.km).toLocaleString('en-ZA')}</td><td>${fmtNum(s.litres,1)}</td><td>${s.ppl?fmtNum(s.ppl/100,2):'—'}</td><td>${fmtShort(s.cost)}</td></tr>`).join('')}</tbody></table></div>`;
+  const table=`<div class="section"><h3>Month by month<small>${pm.length>6?periodLabel(mk):'six months'}</small></h3>${periodBar()}${monthBars(months,m=>({value:fuelStats(m).cost}),colorOf(fuelCatId()))}<table class="cmp"><thead><tr><th>Month</th><th>km</th><th>Litres</th><th>R/L</th><th>Spend</th></tr></thead><tbody>${stats.filter(s=>s.n).map(s=>`<tr><td>${monthShort(s.m)}</td><td>${Math.round(s.km).toLocaleString('en-ZA')}</td><td>${fmtNum(s.litres,1)}</td><td>${s.ppl?fmtNum(s.ppl/100,2):'—'}</td><td>${fmtShort(s.cost)}</td></tr>`).join('')}</tbody></table></div>`;
   const rows=[...list].reverse().slice(0,40).map(f=>{const idx=list.indexOf(f);const prevF=idx>0?list[idx-1]:null;const km=prevF?f.odometer-prevF.odometer:null;return `<button class="item" data-act="fuel-edit" data-id="${f.id}"><span>${esc(f.station||'Fill-up')}<span class="sub">${dateLabel(f.date)}, ${fmtKm(f.odometer)}${km!=null?` (+${Math.round(km)} km)`:''}, ${fmtNum(f.litres,1)} L at ${fmtNum(f.pricePerL/100,2)}${f.full?'':', partial'}</span></span><span class="amt">${fmt(f.cost)}</span></button>`;}).join('');
   return `${hero}${tiles}${setup}${table}<div class="section"><h3>Fill-ups</h3>${rows}</div>`;
 }
@@ -822,6 +891,9 @@ const ACTIONS={
   'fuel-edit':el=>openFuelSheet(el.dataset.id),
   'fuel-settings':()=>openFuelSettings(),
   'sms-paste':()=>openSMSSheet(''),
+  'period':el=>{const p=el.dataset.p;S.period=(p==='ytd'||p==='all')?p:Number(p);const d=S.openDetail;render();if(d){if(d.type==='cat')openCatDetail(d.id);else if(d.type==='payee')openPayeeDetail(d.payee,d.catId);}},
+  'payee-detail':el=>openPayeeDetail(el.dataset.id,el.dataset.cat||null),
+  'show-shops':async el=>{await setMeta('showShops',el.dataset.on==='1');const d=S.openDetail;if(d&&d.type==='cat')openCatDetail(d.id);},
 };
 document.addEventListener('click',e=>{
   const el=e.target.closest('[data-act]');if(!el)return;
@@ -992,13 +1064,13 @@ function openRulesList(){
     await upsertTxns(changed);openRulesList();render();toast(changed.length?`${changed.length} categorised`:'No matches');
   };
 }
-function openRuleSheet(id){
-  const ex=id?S.rules.find(r=>r.id===id):null;
-  const html=`<div class="field"><label for="rMatch">Description contains</label><input id="rMatch" value="${esc(ex?.match||'')}" autocomplete="off" placeholder="e.g. checkers"></div>
-    <div class="field"><label for="rCat">Category</label><select id="rCat">${catOptions('expense',ex?.categoryId)}${catOptions('income',ex?.categoryId).replace(/<optgroup label="Other">.*?<\/optgroup>/,'')}</select></div>
+function openRuleSheet(id,pre){
+  const ex=id?S.rules.find(r=>r.id===id):null;pre=pre||{};
+  const html=`<div class="field"><label for="rMatch">Description contains</label><input id="rMatch" value="${esc(ex?.match||pre.match||'')}" autocomplete="off" placeholder="e.g. checkers"></div>
+    <div class="field"><label for="rCat">Category</label><select id="rCat">${catOptions('expense',ex?.categoryId||pre.categoryId)}${catOptions('income',ex?.categoryId||pre.categoryId).replace(/<optgroup label="Other">.*?<\/optgroup>/,'')}</select></div>
     <div class="field"><label for="rRename">Show payee as</label><input id="rRename" value="${esc(ex?.rename||'')}" autocomplete="off" placeholder="Optional, e.g. Checkers"></div>`;
   openSheet(ex?'Edit rule':'New rule',html,`${ex?`<button class="btn danger" id="rDel">Delete</button>`:''}<button class="btn primary" id="rSave">${ex?'Save changes':'Add rule'}</button>`);
-  if(ex)$('#rCat').value=ex.categoryId;
+  if(ex||pre.categoryId)$('#rCat').value=ex?ex.categoryId:pre.categoryId;
   $('#rSave').onclick=async()=>{
     const match=$('#rMatch').value.trim();if(!match){toast('Enter the words to look for');return;}
     const r=Object.assign(ex||{id:uid(),createdAt:nowISO()},{match,categoryId:$('#rCat').value,rename:$('#rRename').value.trim(),updatedAt:nowISO()});
@@ -1310,7 +1382,7 @@ async function init(){
   }
 }
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;if(S.tab==='more')render();});
-window.Ledger={S,fn:{parseCSV,parseDate,parseAmount,detectTable,guessMapping,parseImportRows,runImport,rollbackImport,loadImportText,openImporter,renderPreview,upsertTxns,deleteTxn,setBudget,monthTotals,spentFor,spentTop,spentLeaf,effectiveLimit,projectionFor,insights,accountBalance,backupJSON,restoreData,applyRules,cleanPayee,render,openTxnSheet,saveTxnForm,openAccountSheet,openCategoriesList,openCategorySheet,openCatDetail,setMeta,parseBankSMS,handleSMS,openSMSSheet,openFuelSheet,openFuelSettings,fuelStats,consumption,drivingPace,serviceForecast,fuelCatId,topCats,childrenOf,statusOf,get IMP(){return IMP;},set IMP(v){IMP=v;}}};
+window.Ledger={S,fn:{parseCSV,parseDate,parseAmount,detectTable,guessMapping,parseImportRows,runImport,rollbackImport,loadImportText,openImporter,renderPreview,upsertTxns,deleteTxn,setBudget,monthTotals,spentFor,spentTop,spentLeaf,effectiveLimit,projectionFor,insights,accountBalance,backupJSON,restoreData,applyRules,cleanPayee,render,openTxnSheet,saveTxnForm,openAccountSheet,openCategoriesList,openCategorySheet,openCatDetail,setMeta,parseBankSMS,handleSMS,openSMSSheet,openFuelSheet,openFuelSettings,fuelStats,consumption,drivingPace,serviceForecast,fuelCatId,topCats,childrenOf,statusOf,periodMonths,periodLabel,leafMapFor,topMapFor,totalsFor,payeesFor,openPayeeDetail,get IMP(){return IMP;},set IMP(v){IMP=v;}}};
 window.LedgerReady=init().catch(e=>{console.error(e);$('#view').innerHTML=`<p class="empty bad">Ledger couldn't open its storage: ${esc(e.message||e)}. Try a different browser, or check that private browsing is off.</p>`;});
 </script>
 </body>
