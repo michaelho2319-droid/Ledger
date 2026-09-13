@@ -1,7 +1,7 @@
 {
   "name": "Ledger",
   "short_name": "Ledger",
-  "description": "Personal budgeting: log spending, capture bank SMSes, import statements, set limits, track fuel.",
+  "description": "Personal budgeting: log spending, import statements, set limits, track fuel.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
@@ -25,14 +25,5 @@
       "type": "image/png",
       "purpose": "maskable"
     }
-  ],
-  "share_target": {
-    "action": "./",
-    "method": "GET",
-    "params": {
-      "title": "title",
-      "text": "text",
-      "url": "url"
-    }
-  }
+  ]
 }
