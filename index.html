@@ -259,6 +259,7 @@ body.sheet-open{overflow:hidden}
 .brow.parent .name{font-size:16px}
 .brow .nums{font-size:13px;color:var(--ink-2);display:flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums;white-space:nowrap;flex:0 0 auto}
 .brow .nums input{width:96px;height:40px;text-align:right;border:1px solid var(--rule-strong);border-radius:8px;background:transparent;padding:0 8px;font-variant-numeric:tabular-nums;font-size:16px}
+.brow .nums .sumv{font-size:16px;font-weight:600;color:var(--ink);min-width:96px;text-align:right;display:inline-block}
 .bar{height:5px;background:var(--paper-2);border-radius:3px;margin-top:8px;overflow:hidden;position:relative}
 .bar div{height:100%;border-radius:3px;max-width:100%}
 .bar div.over{background:var(--red)!important}
@@ -315,7 +316,7 @@ table.prev{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
 
 <script>
 'use strict';
-const APP_VERSION='0.8.1';
+const APP_VERSION='0.8.2';
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 
@@ -458,7 +459,7 @@ function catOptions(kind,selected){
   let html='';
   for(const p of tops){
     const kids=childrenOf(p.id);
-    html+=`<optgroup label="${esc(p.name)}"><option value="${p.id}" ${p.id===selected?'selected':''}>${esc(p.name)}${kids.length?' (general)':''}</option>${kids.map(c=>`<option value="${c.id}" ${c.id===selected?'selected':''}>${esc(c.name)}</option>`).join('')}</optgroup>`;
+    html+=`<optgroup label="${esc(p.name)}"><option value="${p.id}" ${p.id===selected?'selected':''}>${esc(p.name)}${kids.length?' (no sub-category)':''}</option>${kids.map(c=>`<option value="${c.id}" ${c.id===selected?'selected':''}>${esc(c.name)}</option>`).join('')}</optgroup>`;
   }
   html+=`<optgroup label="Other"><option value="cat_uncat" ${selected==='cat_uncat'?'selected':''}>Uncategorised</option></optgroup>`;
   return html;
@@ -497,13 +498,13 @@ function incomeIn(mk){let s=0;for(const t of live()){if(!inMonth(t,mk)||isTransf
 function limitRecord(catId,mk){let best=null;for(const b of S.budgets){if(b.categoryId!==catId||b.month>mk)continue;if(!best||b.month>best.month)best=b;}return best;}
 function limitFor(catId,mk){const b=limitRecord(catId,mk);return b?b.amount:0;}
 function limitSince(catId,mk){const b=limitRecord(catId,mk);return b&&b.amount>0&&b.month<mk?b.month:null;}
-function effectiveLimit(catId,mk){const own=limitFor(catId,mk);if(own)return {amount:own,derived:false};const sum=childrenOf(catId).reduce((s,c)=>s+limitFor(c.id,mk),0);return {amount:sum,derived:true};}
+function effectiveLimit(catId,mk){const kids=childrenOf(catId);if(kids.length)return {amount:kids.reduce((s,c)=>s+limitFor(c.id,mk),0),derived:true};return {amount:limitFor(catId,mk),derived:false};}
 function totalLimit(mk){return topCats().filter(c=>!c.income).reduce((s,c)=>s+effectiveLimit(c.id,mk).amount,0);}
 // What a limit actually covers. A category's own limit covers everything in it; a limit derived from
 // sub-categories covers only those sub-categories, and the rest of the spend is reported as "without a limit".
 function limitStatusFor(catId,mk,withProjection){
-  const own=limitFor(catId,mk);const kids=childrenOf(catId);const all=spentFor(catId,mk);
-  if(own){const pr=withProjection?projectionFor(mk,catId):null;return {limit:own,spent:all,total:all,unlimited:0,derived:false,projected:pr?pr.projected:0};}
+  const kids=childrenOf(catId);const all=spentFor(catId,mk);
+  if(!kids.length){const own=limitFor(catId,mk);if(!own)return {limit:0,spent:all,total:all,unlimited:all,derived:false,projected:0};const pr=withProjection?projectionFor(mk,catId):null;return {limit:own,spent:all,total:all,unlimited:0,derived:false,projected:pr?pr.projected:0};}
   const lk=kids.filter(k=>limitFor(k.id,mk)>0);
   if(!lk.length)return {limit:0,spent:all,total:all,unlimited:all,derived:true,projected:0};
   const leaf=spentLeaf(mk);const spent=lk.reduce((a,k)=>a+(leaf[k.id]||0),0);
@@ -516,7 +517,7 @@ function limitedTotals(mk,withProjection){
   out.unlimited+=spentLeaf(mk).cat_uncat||0;
   return out;
 }
-const ownLimitCats=mk=>cats().filter(c=>!c.system&&!isIncomeCat(c.id)&&limitFor(c.id,mk)>0);
+const ownLimitCats=mk=>cats().filter(c=>!c.system&&!isIncomeCat(c.id)&&!childrenOf(c.id).length&&limitFor(c.id,mk)>0);
 function monthTotals(mk){const spent=Object.values(spentLeaf(mk)).reduce((a,b)=>a+b,0);return {income:incomeIn(mk),spent,budgeted:totalLimit(mk)};}
 function accountBalance(a){let b=a.openingBalance||0;for(const t of live())if(t.accountId===a.id)b+=t.amount;return b;}
 async function setBudget(catId,mk,amount){
@@ -991,9 +992,9 @@ function openCatDetail(id){
   let subs='';
   if(kids.length){
     const entries=kids.map((k,i)=>({id:k.id,name:k.name,color,opacity:1-Math.min(0.66,i*0.22),value:leaf[k.id]||0}));
-    if(leaf[id]>0)entries.push({id,name:c.name+' (general)',color:NEUTRAL,value:leaf[id]});
+    if(leaf[id]>0)entries.push({id,name:c.name+' (no sub-category)',color:NEUTRAL,value:leaf[id],act:'cat-general'});
     const tot=entries.reduce((a,e)=>a+Math.max(0,e.value),0);const bar=tot?`<div class="center">${donutSVG(entries,{size:150,thick:22,label:fmtShort(tot),sub:multi?`${months.length} months`:monthShort(mk)})}</div>`:'';
-    subs=`<div class="section"><h3>Sub-categories<small>${periodLabel(mk)}</small></h3>${bar}${entries.sort((a,b)=>b.value-a.value).map(e=>`<button class="crow" data-act="cat-detail" data-id="${e.id}"><span class="cname"><i class="swatch" style="background:${e.color};opacity:${e.opacity??1}"></i><span>${esc(e.name)}</span>${tot?`<span class="pct">${Math.round(Math.max(0,e.value)/tot*100)}%</span>`:''}</span><span class="amt">${fmt(e.value)}</span>${!multi&&limitFor(e.id,mk)?limitBar(e.value,limitFor(e.id,mk),color):''}</button>`).join('')}</div>`;
+    subs=`<div class="section"><h3>Sub-categories<small>${periodLabel(mk)}</small></h3>${bar}${entries.sort((a,b)=>b.value-a.value).map(e=>`<button class="crow" data-act="${e.act||'cat-detail'}" data-id="${e.id}"><span class="cname"><i class="swatch" style="background:${e.color};opacity:${e.opacity??1}"></i><span>${esc(e.name)}</span>${tot?`<span class="pct">${Math.round(Math.max(0,e.value)/tot*100)}%</span>`:''}</span><span class="amt">${fmt(e.value)}</span>${!multi&&limitFor(e.id,mk)?limitBar(e.value,limitFor(e.id,mk),color):''}</button>`).join('')}</div>`;
   }
   const shops=payeesFor(months,id);const showShops=S.meta.showShops===true;const stot=shops.reduce((a,x)=>a+x.amount,0)||1;
   const shopsHTML=shops.length?`<div class="section"><h3>Shops<small>${shops.length}, ${periodLabel(mk)}</small></h3>${showShops
@@ -1004,11 +1005,11 @@ function openCatDetail(id){
   const list=txns.length?`<div class="ledger">${txns.slice(0,100).map(t=>rowHTML(t,full?'full':true)).join('')}</div>${txns.length>100?`<p class="note">Showing 100 of ${txns.length}.</p>`:''}`:`<p class="empty">Nothing here ${periodPhrase(mk)}.</p>`;
   const html=`${head}<p class="note">${limitLine}</p>${!multi?limitBar(ls.spent,ls.limit,color,pr&&!pr.final?ls.projected:0):''}${proj}
     <div class="section"><h3>${multi?'Month by month':'Last six months'}<small>dashed line is the average</small></h3>${bars}${cmp}</div>
-    <div class="field" style="margin-top:16px"><label for="cdLimit">Limit for ${monthName(mk)} (rand)</label><input id="cdLimit" inputmode="decimal" value="${limitFor(id,mk)?(limitFor(id,mk)/100).toFixed(0):''}" placeholder="${lim.derived&&lim.amount?(lim.amount/100).toFixed(0)+' from sub-categories':'No limit'}"></div>
+    ${kids.length?`<p class="note" style="margin-top:14px">${lim.amount?`The ${monthName(mk)} limit of ${fmtShort(lim.amount)} is its sub-categories' limits added up.`:'No sub-category has a limit yet.'} Set them on the Limits tab.</p>`:`<div class="field" style="margin-top:16px"><label for="cdLimit">Limit for ${monthName(mk)} (rand)</label><input id="cdLimit" inputmode="decimal" value="${limitFor(id,mk)?(limitFor(id,mk)/100).toFixed(0):''}" placeholder="No limit"></div>`}
     ${subs}${shopsHTML}<div class="section"><h3>Transactions<small>${periodLabel(mk)}</small></h3>${list}</div>`;
   openSheet((emojiOf(id)?emojiOf(id)+' ':'')+fullName(id),html,`<button class="btn" data-act="close-sheet">Done</button>${c.system?'':`<button class="btn primary" data-act="edit-category" data-id="${id}">Edit category</button>`}`,{key:'cat:'+id,reopen:()=>openCatDetail(id)});
   S.openDetail={type:'cat',id};
-  $('#cdLimit').onchange=async()=>{const v=parseAmountInput($('#cdLimit').value);await setBudget(id,mk,v==null?0:v);render();if(S.openDetail&&S.openDetail.type==='cat'&&S.openDetail.id===id)openCatDetail(id);toast('Limit saved');};
+  const cdl=$('#cdLimit');if(cdl)cdl.onchange=async()=>{const v=parseAmountInput(cdl.value);await setBudget(id,mk,v==null?0:v);render();if(S.openDetail&&S.openDetail.type==='cat'&&S.openDetail.id===id)openCatDetail(id);toast('Limit saved');};
 }
 const HOME_SECTIONS=[['pace','Pace'],['insights','What stands out'],['upcoming','Coming up'],['limits','Limits'],['where','Where it goes'],['when','When you spend'],['compare','Compared with previous months'],['flow','In and out'],['balances','Balances']];
 function homeLayout(){const l=S.meta.layout||{};const order=(l.order||[]).filter(id=>HOME_SECTIONS.some(x=>x[0]===id));for(const [id] of HOME_SECTIONS)if(!order.includes(id))order.push(id);return {order,hidden:l.hidden||{}};}
@@ -1056,6 +1057,13 @@ function openScheduleSheet(id,pre){
   };
   if(ex)$('#sDel').onclick=async()=>{if(!await ask(`Remove the monthly ${ex.payee} payment? Entries already added stay in the Ledger.`,'Remove',true))return;S.schedules=S.schedules.filter(x=>x.id!==ex.id);await dbDeleteMany('schedules',[ex.id]);sheetDone();render();toast('Removed');};
   if(!ex)$('#sAmt').focus();
+}
+function openGeneralDetail(parentId){
+  const p=catById(parentId);if(!p)return;const mk=S.month;const months=periodMonths(mk);const set=new Set(months);
+  const txns=live().filter(t=>t.categoryId===parentId&&set.has(t.date.slice(0,7))&&!isTransfer(t)).sort((a,b)=>b.date.localeCompare(a.date));
+  const total=txns.reduce((a,t)=>a-t.amount,0);const kids=childrenOf(parentId);
+  const html=`<div class="bignum"><i class="swatch" style="background:${colorOf(parentId)}"></i><span class="num">${fmtShort(total)}</span></div><p class="note" style="margin-top:2px">${periodPhrase(mk)}, filed under ${esc(p.name)} itself rather than one of its sub-categories${kids.length?` (${kids.map(k=>esc(k.name)).join(', ')})`:''}. No sub-category limit covers these, so they show separately. Tap an entry and pick a sub-category to move it${kids.length?'':', or add sub-categories under Edit categories'}.</p>${txns.length?`<div class="ledger">${txns.map(t=>rowHTML(t,true)).join('')}</div>`:'<p class="empty">Nothing here.</p>'}`;
+  openSheet(`${p.name} (no sub-category)`,html,`<button class="btn" data-act="close-sheet">Done</button><button class="btn primary" data-act="categories">Edit categories</button>`,{key:'general:'+parentId,reopen:()=>openGeneralDetail(parentId)});
 }
 function openDayDetail(date){
   const txns=live().filter(t=>t.date===date&&!isTransfer(t)).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
@@ -1118,12 +1126,12 @@ function viewBudget(){
       ?`${st.spent>st.limit?fmtShort(st.spent-st.limit)+' over':fmtShort(st.limit-st.spent)+' left'} in the sub-categories with limits${st.unlimited>0?`, plus ${fmtShort(st.unlimited)} where there's none`:''}`
       :`${ps>st.limit?fmtShort(ps-st.limit)+' over':fmtShort(st.limit-ps)+' left'}, ${Math.round(ps/st.limit*100)}% used${limitSince(p.id,mk)?', since '+monthShort(limitSince(p.id,mk)):''}`)
       :(ps?`${fmtShort(ps)} spent, no limit`:'');
-    html+=`<div class="bgroup"><div class="brow parent"><div class="top"><button class="name" data-act="cat-detail" data-id="${p.id}"><i class="swatch" style="background:${p.color}"></i>${catIcon(p.id)}${esc(p.name)}${note?`<small class="lft ${pst==='over'?'bad':''}">${note}</small>`:''}</button><span class="nums"><span class="${pst==='over'?'bad':pst==='warn'?'warn':''}">${fmtShort(st.limit?st.spent:ps)}</span><span>of</span><input inputmode="decimal" data-budget="${p.id}" value="${limitFor(p.id,mk)?(limitFor(p.id,mk)/100).toFixed(0):''}" placeholder="${st.derived&&st.limit?'sum '+(st.limit/100).toFixed(0):'—'}" aria-label="Limit for ${esc(p.name)}"></span></div>${limitBar(st.spent,st.limit,p.color,mid?st.projected:0)}</div>`;
+    html+=`<div class="bgroup"><div class="brow parent"><div class="top"><button class="name" data-act="cat-detail" data-id="${p.id}"><i class="swatch" style="background:${p.color}"></i>${catIcon(p.id)}${esc(p.name)}${note?`<small class="lft ${pst==='over'?'bad':''}">${note}</small>`:''}</button><span class="nums"><span class="${pst==='over'?'bad':pst==='warn'?'warn':''}">${fmtShort(st.limit?st.spent:ps)}</span><span>of</span>${kids.length?`<b class="sumv" title="Sum of the sub-category limits">${st.limit?fmtShort(st.limit):'—'}</b>`:`<input inputmode="decimal" data-budget="${p.id}" value="${limitFor(p.id,mk)?(limitFor(p.id,mk)/100).toFixed(0):''}" placeholder="—" aria-label="Limit for ${esc(p.name)}">`}</span></div>${limitBar(st.spent,st.limit,p.color,mid?st.projected:0)}</div>`;
     for(const c of kids){
       const l=limitFor(c.id,mk),s=leaf[c.id]||0;const st=statusOf(s,l);
       html+=`<div class="brow child"><div class="top"><button class="name" data-act="cat-detail" data-id="${c.id}">${esc(c.name)}${l?`<small class="lft ${st==='over'?'bad':''}">${s>l?fmtShort(s-l)+' over':fmtShort(l-s)+' left'}${limitSince(c.id,mk)?', since '+monthShort(limitSince(c.id,mk)):''}</small>`:''}</button><span class="nums"><span class="${st==='over'?'bad':st==='warn'?'warn':''}">${fmtShort(s)}</span><span>of</span><input inputmode="decimal" data-budget="${c.id}" value="${l?(l/100).toFixed(0):''}" placeholder="—" aria-label="Limit for ${esc(c.name)}"></span></div>${limitBar(s,l,p.color,mid?projectionFor(mk,c.id)?.projected:0)}</div>`;
     }
-    if(leaf[p.id]>0&&kids.length)html+=`<div class="brow child"><div class="top"><span class="name">${esc(p.name)} (general)</span><span class="nums">${fmtShort(leaf[p.id])}</span></div></div>`;
+    if(leaf[p.id]>0&&kids.length)html+=`<div class="brow child"><div class="top"><button class="name" data-act="cat-general" data-id="${p.id}">${esc(p.name)} (no sub-category)<small class="lft">filed under ${esc(p.name)} itself, so no sub-category limit covers it. Tap to see and move them.</small></button><span class="nums">${fmtShort(leaf[p.id])}</span></div></div>`;
     html+='</div>';
   }
   if(leaf.cat_uncat>0)html+=`<div class="bgroup"><div class="brow parent"><div class="top"><button class="name" data-act="cat-detail" data-id="cat_uncat"><i class="swatch" style="background:${NEUTRAL}"></i>Uncategorised</button><span class="nums">${fmtShort(leaf.cat_uncat)}</span></div></div></div>`;
@@ -1135,7 +1143,7 @@ function viewBudget(){
   const copy='';
   const ost=statusOf(totalS,totalL);const oproj=mid&&LT.projected>totalS&&LT.projected<totalL?`<div class="proj" style="left:${(LT.projected/totalL*100).toFixed(1)}%" title="Projected"></div>`:'';
   const summary=`<div class="totals"><span>Limits ${fmtShort(totalL)}</span><span>Spent ${fmtShort(totalS)}</span><span>${totalL?`${fmtShort(Math.abs(totalL-totalS))} ${totalL>=totalS?'left':'over'}`:''}</span></div>${totalL?`<div class="track"><div class="fill ${ost}" style="width:${Math.min(100,totalS/totalL*100).toFixed(1)}%"></div>${oproj}${todayMarker(mk)}</div>`:''}${LT.unlimited>0?`<p class="note" style="margin:0 0 6px">${fmtShort(LT.unlimited)} more was spent in categories without a limit${totalL?', not counted above':''}.</p>`:''}${income?`<div class="totals"><span>Income so far</span><span class="good">${fmtShort(income)}</span></div>`:''}`;
-  return `${monthNav()}${summary}<div class="actions"><button class="btn" data-act="suggest-limits">Suggest limits from history</button><button class="btn" data-act="categories">Edit categories</button></div>${html}${incHTML}<p class="note" style="margin-top:14px">Type a rand amount next to a category or sub-category to set its limit. A limit stays in force every month until you change it; clear the box to remove it from ${monthName(mk)} onward. A category with no limit of its own uses the sum of its sub-categories. The amber tick on a bar is where this month is heading at the current pace.</p>`;
+  return `${monthNav()}${summary}<div class="actions"><button class="btn" data-act="suggest-limits">Suggest limits from history</button><button class="btn" data-act="categories">Edit categories</button></div>${html}${incHTML}<p class="note" style="margin-top:14px">Type a rand amount next to a sub-category to set its limit; a category's number is its sub-categories added up. A limit stays in force every month until you change it; clear the box to remove it from ${monthName(mk)} onward. The amber tick on a bar is where this month is heading at the current pace.</p>`;
 }
 
 /* ================= Fuel ================= */
@@ -1297,6 +1305,7 @@ const ACTIONS={
   'add-account':()=>openAccountSheet(),
   'edit-account':el=>openAccountSheet(da(el,'id')),
   'cat-detail':el=>openCatDetail(da(el,'id')),
+  'cat-general':el=>openGeneralDetail(da(el,'id')),
   'edit-category':el=>openCategorySheet(da(el,'id')),
   'suggest-limits':async()=>{const mk=S.month;const targets=[];for(const p of topCats().filter(c=>!c.income)){const kids=childrenOf(p.id);for(const c of (kids.length?kids:[p])){if(limitFor(c.id,mk))continue;const a=avgPrev3(c.id,mk);if(a>=5000)targets.push({c,amount:Math.ceil(a/10000)*10000});}}
     if(!targets.length){toast('Nothing to suggest yet: it needs a few months of history for categories without a limit');return;}
@@ -1744,7 +1753,7 @@ async function init(){
   }
 }
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;if(S.tab==='more')render();});
-window.Ledger={S,fn:{parseCSV,parseDate,parseAmount,detectTable,guessMapping,parseImportRows,runImport,rollbackImport,loadImportText,openImporter,renderPreview,upsertTxns,deleteTxn,setBudget,monthTotals,spentFor,spentTop,spentLeaf,effectiveLimit,projectionFor,insights,accountBalance,backupJSON,restoreData,applyRules,cleanPayee,render,openTxnSheet,saveTxnForm,openAccountSheet,openCategoriesList,openCategorySheet,openCatDetail,setMeta,openFuelSheet,openFuelSettings,fuelStats,consumption,consumptionSeries,drivingPace,serviceForecast,fuelCatId,topCats,childrenOf,statusOf,periodMonths,periodLabel,leafMapFor,topMapFor,totalsFor,payeesFor,openPayeeDetail,openDayDetail,ask,limitStatusFor,limitedTotals,generateScheduled,runScheduled,nextScheduledDate,openScheduleSheet,limitFor,limitSince,recurringPayees,sankeySVG,treemapSVG,netWorthSeries,homeLayout,openLayoutSheet,openRecurringSheet,switchTab,sheetBack,sheetDone,burnUpSVG,heatmapHTML,weekdayProfile,stackedBarsSVG,get SHEETS(){return SHEETS;},donutSVG,ringSVG,groupedBarsSVG,lineChartSVG,get IMP(){return IMP;},set IMP(v){IMP=v;}}};
+window.Ledger={S,fn:{parseCSV,parseDate,parseAmount,detectTable,guessMapping,parseImportRows,runImport,rollbackImport,loadImportText,openImporter,renderPreview,upsertTxns,deleteTxn,setBudget,monthTotals,spentFor,spentTop,spentLeaf,effectiveLimit,projectionFor,insights,accountBalance,backupJSON,restoreData,applyRules,cleanPayee,render,openTxnSheet,saveTxnForm,openAccountSheet,openCategoriesList,openCategorySheet,openCatDetail,setMeta,openFuelSheet,openFuelSettings,fuelStats,consumption,consumptionSeries,drivingPace,serviceForecast,fuelCatId,topCats,childrenOf,statusOf,periodMonths,periodLabel,leafMapFor,topMapFor,totalsFor,payeesFor,openPayeeDetail,openDayDetail,openGeneralDetail,ask,limitStatusFor,limitedTotals,generateScheduled,runScheduled,nextScheduledDate,openScheduleSheet,limitFor,limitSince,recurringPayees,sankeySVG,treemapSVG,netWorthSeries,homeLayout,openLayoutSheet,openRecurringSheet,switchTab,sheetBack,sheetDone,burnUpSVG,heatmapHTML,weekdayProfile,stackedBarsSVG,get SHEETS(){return SHEETS;},donutSVG,ringSVG,groupedBarsSVG,lineChartSVG,get IMP(){return IMP;},set IMP(v){IMP=v;}}};
 window.LedgerReady=init().catch(e=>{console.error(e);$('#view').innerHTML=`<p class="empty bad">Ledger couldn't open its storage: ${esc(e.message||e)}. Try a different browser, or check that private browsing is off.</p>`;});
 </script>
 </body>
