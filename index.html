@@ -2,7 +2,8 @@
 <html lang="en-ZA">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="format-detection" content="telephone=no">
 <meta name="theme-color" content="#EEF2E6" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#111A14" media="(prefers-color-scheme: dark)">
 <meta name="mobile-web-app-capable" content="yes">
@@ -38,25 +39,30 @@
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;background:var(--paper)}
-body{margin:0;background:var(--paper);color:var(--ink);font-family:'Bricolage Grotesque',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:15px;line-height:1.4;font-optical-sizing:auto;-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:'Bricolage Grotesque',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;font-size:15px;line-height:1.4;font-optical-sizing:auto;-webkit-font-smoothing:antialiased;touch-action:manipulation}
+button,.row,.item,.chip,.crow,.insight,#tabs,#fab,.sh,.heat button{-webkit-user-select:none;user-select:none}
+html[data-text="large"] #app,html[data-text="large"] #sheet .panel,html[data-text="large"] #toast,html[data-text="large"] #ask .card{zoom:1.12}
+@media (prefers-reduced-motion: no-preference){#sheet .panel{transition:transform .22s cubic-bezier(.2,.8,.2,1)}}
 button,input,select,textarea{font:inherit;color:inherit}
 button{background:none;border:0;padding:0;cursor:pointer;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
 :focus-visible{outline:2px solid var(--green);outline-offset:2px}
 @media (prefers-reduced-motion: no-preference){ .fill,.bar div{transition:width .35s ease} }
 
-#app{max-width:520px;margin:0 auto;min-height:100vh;padding:0 16px calc(100px + env(safe-area-inset-bottom))}
-.topbar{display:flex;align-items:center;justify-content:space-between;padding:calc(12px + env(safe-area-inset-top)) 0 4px}
-.brand{font-weight:600;font-size:17px}
+#app{max-width:600px;margin:0 auto;min-height:100vh;padding:calc(4px + env(safe-area-inset-top)) 16px calc(104px + env(safe-area-inset-bottom))}
+.pagehead{display:flex;align-items:center;justify-content:space-between;padding:12px 0 6px;position:sticky;top:0;background:var(--paper);z-index:5}
+.pagehead h2{margin:0;font-size:18px;font-weight:500}
 .monthnav{display:flex;align-items:center;justify-content:space-between;padding:6px 0 8px;position:sticky;top:0;background:var(--paper);z-index:5;margin-bottom:6px}
+.monthnav button{min-height:44px}
 .monthnav .mtitle{font-size:18px;font-weight:500;padding:6px 10px;border-radius:8px}
+.monthnav>button:first-child,.monthnav>button:last-child{width:48px;height:48px;border-radius:24px}
 .monthnav .mtitle.away{text-decoration:underline dotted var(--ink-3);text-underline-offset:4px}
 .monthnav .mtitle small{display:block;font-size:11px;color:var(--ink-3);font-weight:400;line-height:1}
 .monthnav button{width:40px;height:40px;border-radius:20px;font-size:24px;line-height:1;color:var(--ink-2)}
 .monthnav button:active{background:var(--paper-2)}
 
 .hero{padding:6px 0 18px;border-bottom:1px solid var(--rule)}
-.hero h1{font-size:30px;line-height:1.1;font-weight:500;margin:0 0 10px;letter-spacing:-.012em}
+.hero h1{font-size:clamp(23px,7.2vw,30px);line-height:1.1;font-weight:500;margin:0 0 10px;letter-spacing:-.012em}
 .hero .wrap{display:flex;align-items:center;justify-content:space-between;gap:14px}
 .hero .wrap>div{min-width:0;flex:1}
 .hero .ring{flex:0 0 auto}
@@ -74,21 +80,21 @@ button{background:none;border:0;padding:0;cursor:pointer;-webkit-tap-highlight-c
 
 .filters{display:flex;gap:8px;padding:12px 0 0;flex-wrap:wrap;align-items:center}
 .filters+.filters{padding-top:8px}
-.filters .chip{height:38px}
-.filters input,.filters select{min-width:0;height:38px;padding:0 10px;border:1px solid var(--rule-strong);border-radius:8px;background:transparent}
+.filters .chip{height:44px}
+.filters input,.filters select{min-width:0;height:44px;padding:0 12px;border:1px solid var(--rule-strong);border-radius:10px;background:transparent;font-size:16px}
 .filters input{flex:1}
 .filters select{flex:1 1 40%;min-width:0}
 
 .ledger{position:relative;border-top:1px solid var(--rule)}
 .ledger::before{content:'';position:absolute;left:58px;top:0;bottom:0;width:1px;background:var(--margin);opacity:.55}
-.row{display:grid;grid-template-columns:50px 1fr auto;gap:0 14px;width:100%;padding:11px 0;border-bottom:1px solid var(--rule);text-align:left;align-items:center}
-.row:active{background:var(--paper-2)}
+.row{display:grid;grid-template-columns:50px 1fr auto;gap:0 14px;width:100%;padding:12px 0;min-height:52px;border-bottom:1px solid var(--rule);text-align:left;align-items:center}
+.row:active,.item:active,.crow:active,.insight:active,.sh:active{background:var(--paper-2)}
 .row .date{font-size:12px;color:var(--ink-3);padding-top:3px;align-self:start;font-variant-numeric:tabular-nums;white-space:nowrap}
 .row .main{min-width:0;display:flex;flex-direction:column;gap:1px}
 .row .payee{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row .meta{font-size:12.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row .meta .acc{color:var(--ink-3);margin-left:8px}
-.row .amt{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+.row .amt{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap;font-size:16px}
 .amt.in{color:var(--green)}
 .amt.tr{color:var(--ink-3);font-weight:500}
 .dot{display:inline-block;width:7px;height:7px;border-radius:4px;border:1.5px solid var(--amber);margin-right:6px;vertical-align:1px}
@@ -97,21 +103,23 @@ button{background:none;border:0;padding:0;cursor:pointer;-webkit-tap-highlight-c
 
 #tabs{position:fixed;left:0;right:0;bottom:0;background:var(--paper);border-top:1px solid var(--rule);padding-bottom:env(safe-area-inset-bottom);z-index:20}
 #tabs .in{max-width:520px;margin:0 auto;display:grid;grid-template-columns:repeat(5,1fr)}
-#tabs button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 0 8px;font-size:11.5px;color:var(--ink-3);position:relative}
+#tabs button{display:flex;flex-direction:column;align-items:center;gap:3px;padding:10px 0 9px;min-height:56px;font-size:11.5px;color:var(--ink-3);position:relative}
+#tabs button:active{background:var(--paper-2)}
 #tabs svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 #tabs button.on{color:var(--ink);font-weight:500}
 #tabs button.on::after{content:'';position:absolute;left:32%;right:32%;bottom:4px;height:2px;background:var(--margin)}
-#fab{position:fixed;right:16px;bottom:calc(74px + env(safe-area-inset-bottom));height:48px;padding:0 20px 0 16px;border-radius:24px;background:var(--ink);color:var(--paper);font-weight:600;box-shadow:0 6px 18px rgba(0,0,0,.22);z-index:21;display:flex;align-items:center;gap:6px}
-#fab span{font-size:22px;line-height:1;font-weight:400}
-@media (min-width:560px){#fab{right:calc(50% - 260px + 16px)}}
+#fab{position:fixed;right:16px;bottom:calc(76px + env(safe-area-inset-bottom));height:54px;padding:0 22px 0 18px;border-radius:27px;background:var(--ink);color:var(--paper);font-weight:600;font-size:16px;box-shadow:0 6px 18px rgba(0,0,0,.22);z-index:21;display:flex;align-items:center;gap:6px}
+#fab:active{transform:scale(.97)}
+#fab span{font-size:24px;line-height:1;font-weight:400}
 
 #sheet{position:fixed;inset:0;z-index:30;background:var(--scrim)}
 #sheet .panel{position:absolute;left:0;right:0;bottom:0;max-height:94vh;max-height:94dvh;display:flex;flex-direction:column;background:var(--paper);border-radius:18px 18px 0 0;box-shadow:var(--shadow);max-width:560px;margin:0 auto}
-#sheet .panel::before{content:'';display:block;width:36px;height:4px;border-radius:2px;background:var(--rule-strong);margin:10px auto 0}
+#sheet .panel::before{content:'';display:block;width:40px;height:5px;border-radius:3px;background:var(--rule-strong);margin:10px auto 0}
+#sheet .head{touch-action:none}
 #sheet .head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 18px 6px;flex:0 0 auto}
 #sheet .head h3{margin:0;font-size:19px;font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#sheet .head button{color:var(--ink-2);height:36px;padding:0 6px;flex:0 0 auto}
-#sheet .body{overflow:auto;padding:4px 18px 14px;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0}
+#sheet .head button{color:var(--ink-2);height:44px;padding:0 10px;flex:0 0 auto}
+#sheet .body{overflow:auto;padding:4px 18px 14px;-webkit-overflow-scrolling:touch;flex:1 1 auto;min-height:0;overscroll-behavior:contain}
 #sheet .foot{display:flex;gap:10px;padding:12px 18px calc(16px + env(safe-area-inset-bottom));border-top:1px solid var(--rule);flex:0 0 auto}
 #sheet .foot:empty{display:none}
 body.sheet-open{overflow:hidden}
@@ -119,19 +127,22 @@ body.sheet-open{overflow:hidden}
 .field{display:flex;flex-direction:column;gap:6px;margin:12px 0}
 .field label{font-size:13px;color:var(--ink-2)}
 .field label.chk{display:flex;align-items:center;gap:10px;font-size:15px;color:var(--ink)}
-.field input,.field select,.field textarea{height:44px;padding:0 12px;border:1px solid var(--rule-strong);border-radius:8px;background:transparent;width:100%;min-width:0}
+.field input,.field select,.field textarea{height:48px;padding:0 12px;border:1px solid var(--rule-strong);border-radius:10px;background:transparent;width:100%;min-width:0;font-size:16px}
 .field textarea{height:auto;min-height:96px;padding:10px 12px;line-height:1.4}
 .field input[type="checkbox"]{width:20px;height:20px;accent-color:var(--green)}
 .field input[type="file"]{padding:9px 12px}
-.field input.big{height:62px;font-size:32px;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.field input.big{height:66px;font-size:34px;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 .seg{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--rule-strong);border-radius:8px;overflow:hidden;margin:6px 0 4px}
-.seg button{padding:10px 0;color:var(--ink-2)}
+.seg button{padding:12px 0;min-height:46px;color:var(--ink-2)}
 .seg button.on{background:var(--ink);color:var(--paper)}
-.btn{height:44px;padding:0 18px;border-radius:8px;border:1px solid var(--rule-strong);font-weight:500;display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap}
+.btn{height:48px;padding:0 18px;border-radius:10px;border:1px solid var(--rule-strong);font-weight:500;display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap}
+.btn:active{background:var(--paper-2)}
+.btn.primary:active{opacity:.85;background:var(--ink)}
 .btn:disabled{opacity:.45}
 .btn.primary{background:var(--ink);color:var(--paper);border-color:var(--ink);flex:1}
 .btn.danger{color:var(--red);border-color:transparent}
-.btn.small{height:34px;padding:0 12px;font-size:13.5px}
+.btn.primary.danger{background:var(--red);border-color:var(--red);color:#fff}
+.btn.small{height:40px;padding:0 14px;font-size:14px}
 .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
 .actions{display:flex;gap:10px;flex-wrap:wrap;margin:10px 0}
@@ -140,7 +151,7 @@ body.sheet-open{overflow:hidden}
 .bad{color:var(--red)}
 .good{color:var(--green)}
 .colors{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0}
-.colors button{width:32px;height:32px;border-radius:16px;border:3px solid transparent}
+.colors button{width:40px;height:40px;border-radius:20px;border:3px solid transparent}
 .colors button.on{border-color:var(--ink)}
 
 .section{margin:26px 0 0}
@@ -159,25 +170,26 @@ body.sheet-open{overflow:hidden}
 .heat button.l4{background:var(--green);color:var(--paper);font-weight:600}
 .heat button.today{outline:2px solid var(--margin);outline-offset:-2px}
 .heat button.future{opacity:.35}
-.chips.small .chip{padding:4px 10px;font-size:12.5px}
+.chips.small .chip{padding:0 12px;font-size:13px;min-height:38px}
 .totals{display:flex;justify-content:space-between;padding:4px 0 2px;font-size:14px;color:var(--ink-2);font-variant-numeric:tabular-nums}
 
 .insight{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--rule);font-size:14px;line-height:1.45;width:100%;text-align:left}
 .insight i{flex:0 0 4px;border-radius:2px;background:var(--ink-3);align-self:stretch}
 .insight.red i{background:var(--red)} .insight.amber i{background:var(--amber)} .insight.green i{background:var(--green)}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
-.chip{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:16px;font-size:13px;border:1px solid var(--rule);color:var(--ink-2)}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:0 13px;min-height:40px;border-radius:20px;font-size:13.5px;border:1px solid var(--rule);color:var(--ink-2)}
+.chip:active{background:var(--paper-2)}
 .chip b{font-variant-numeric:tabular-nums;font-weight:600}
 .chip.ok{border-color:var(--green);color:var(--green)}
 .chip.warn{border-color:var(--amber);color:var(--amber)}
 .chip.over{border-color:var(--red);color:var(--red);background:color-mix(in srgb,var(--red) 10%,transparent)}
 .chips.period{margin:2px 0 10px}
-.chips.period .chip{padding:5px 10px;font-size:12.5px}
+.chips.period .chip{padding:0 12px;font-size:13px}
 .chip.sel{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 .bignum{font-size:28px;font-weight:600;letter-spacing:-.01em;margin:2px 0 0;font-variant-numeric:tabular-nums;display:flex;align-items:center}
 .pbar{display:flex;height:16px;border-radius:8px;overflow:hidden;gap:2px;margin:6px 0 10px}
 .pbar .pseg{height:100%;min-width:3px}
-.crow{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:9px 0;border-bottom:1px solid var(--rule);align-items:center;width:100%;text-align:left}
+.crow{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:11px 0;min-height:48px;border-bottom:1px solid var(--rule);align-items:center;width:100%;text-align:left}
 .crow .cname{display:flex;align-items:center;min-width:0}
 .crow .cname span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .crow .amt{font-variant-numeric:tabular-nums;font-weight:500}
@@ -205,7 +217,7 @@ body.sheet-open{overflow:hidden}
 .rev .date{font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums}
 .rev .amt{font-variant-numeric:tabular-nums;font-weight:600}
 .rev .ract{display:flex;gap:8px;align-items:center;margin-top:8px}
-.rev select{flex:1;height:36px;border:1px solid var(--rule-strong);border-radius:8px;background:transparent;padding:0 8px;min-width:0}
+.rev select{flex:1;height:44px;border:1px solid var(--rule-strong);border-radius:10px;background:transparent;padding:0 8px;min-width:0;font-size:16px}
 .brow .name{flex-wrap:wrap}
 .brow .lft{flex-basis:100%;font-size:12px;color:var(--ink-3);font-weight:400;margin-top:1px;padding-left:18px}
 .brow.child .lft{padding-left:0}
@@ -238,13 +250,13 @@ body.sheet-open{overflow:hidden}
 .brow .name{font-weight:500;display:flex;align-items:center;min-width:0;text-align:left}
 .brow.parent .name{font-size:16px}
 .brow .nums{font-size:13px;color:var(--ink-2);display:flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums;white-space:nowrap;flex:0 0 auto}
-.brow .nums input{width:92px;height:32px;text-align:right;border:1px solid var(--rule-strong);border-radius:6px;background:transparent;padding:0 8px;font-variant-numeric:tabular-nums}
+.brow .nums input{width:96px;height:40px;text-align:right;border:1px solid var(--rule-strong);border-radius:8px;background:transparent;padding:0 8px;font-variant-numeric:tabular-nums;font-size:16px}
 .bar{height:5px;background:var(--paper-2);border-radius:3px;margin-top:8px;overflow:hidden;position:relative}
 .bar div{height:100%;border-radius:3px;max-width:100%}
 .bar div.over{background:var(--red)!important}
 .bar .tick{position:absolute;top:0;width:2px;height:100%;background:var(--amber)}
 
-.item{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;padding:12px 0;border-bottom:1px solid var(--rule);text-align:left}
+.item{display:flex;justify-content:space-between;align-items:center;gap:12px;width:100%;padding:13px 0;min-height:52px;border-bottom:1px solid var(--rule);text-align:left}
 .item .sub{display:block;font-size:12.5px;color:var(--ink-2);margin-top:1px}
 .item .amt{font-variant-numeric:tabular-nums;white-space:nowrap}
 .item .chev{color:var(--ink-3)}
@@ -260,13 +272,16 @@ table.prev{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
 .counts span{display:flex;justify-content:space-between;border-bottom:1px solid var(--rule);padding:6px 0}
 .counts b{font-variant-numeric:tabular-nums;font-weight:600}
 
-#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(90px + env(safe-area-inset-bottom));background:var(--ink);color:var(--paper);padding:11px 16px;border-radius:10px;display:flex;gap:18px;align-items:center;z-index:40;font-size:14px;max-width:calc(100% - 32px);box-shadow:0 8px 24px rgba(0,0,0,.25)}
-#toast button{color:var(--paper);font-weight:600;text-decoration:underline;white-space:nowrap}
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(96px + env(safe-area-inset-bottom));background:var(--ink);color:var(--paper);padding:11px 16px;border-radius:10px;display:flex;gap:18px;align-items:center;z-index:40;font-size:14px;max-width:calc(100% - 32px);box-shadow:0 8px 24px rgba(0,0,0,.25)}
+#toast button{color:var(--paper);font-weight:600;text-decoration:underline;white-space:nowrap;min-height:40px;padding:0 6px}
+#ask{position:fixed;inset:0;z-index:50;background:var(--scrim);display:flex;align-items:center;justify-content:center;padding:24px}
+#ask .card{background:var(--paper);border-radius:16px;padding:20px 18px 16px;max-width:360px;width:100%;box-shadow:0 12px 40px rgba(0,0,0,.3)}
+#ask p{margin:0 0 16px;line-height:1.45}
+#ask .actions{margin:0;justify-content:flex-end}
 </style>
 </head>
 <body>
 <div id="app">
-  <div class="topbar"><div class="brand">Ledger</div></div>
   <main id="view"><p class="empty">Opening your ledger…</p></main>
 </div>
 
@@ -287,11 +302,12 @@ table.prev{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
   </div>
 </div>
 <div id="toast" hidden></div>
+<div id="ask" hidden><div class="card" role="alertdialog" aria-modal="true"><p id="askMsg"></p><div class="actions"><button class="btn" id="askNo">Cancel</button><button class="btn primary" id="askOk">OK</button></div></div></div>
 <noscript>Ledger needs JavaScript to run.</noscript>
 
 <script>
 'use strict';
-const APP_VERSION='0.6.0';
+const APP_VERSION='0.7.0';
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 
@@ -638,9 +654,16 @@ function openSheet(title,body,foot,opts){
   if(top&&top.key===key){if(opts.reopen)top.reopen=opts.reopen;}
   else{if(!SHEETS.length)armBack();SHEETS.push({key,reopen:opts.reopen||null});}
   $('#sheetTitle').textContent=title;$('#sheetBody').innerHTML=body;$('#sheetFoot').innerHTML=foot||'';
+  const wasHidden=$('#sheet').hidden;const panel=$('#sheet .panel');panel.style.transform='';
   $('#sheet').hidden=false;document.body.classList.add('sheet-open');$('#sheetBody').scrollTop=0;S.openDetail=null;
+  if(wasHidden){panel.style.transition='none';panel.style.transform='translateY(100%)';void panel.offsetHeight;panel.style.transition='';requestAnimationFrame(()=>{panel.style.transform='';});}
 }
 function hideSheet(){$('#sheet').hidden=true;document.body.classList.remove('sheet-open');IMP=null;S.openDetail=null;}
+function ask(msg,okLabel,danger){
+  return new Promise(res=>{const a=$('#ask');$('#askMsg').textContent=msg;const ok=$('#askOk');ok.textContent=okLabel||'OK';ok.className='btn primary'+(danger?' danger':'');a.hidden=false;
+    const done=v=>{a.hidden=true;ok.onclick=null;$('#askNo').onclick=null;a.onclick=null;res(v);};
+    ok.onclick=()=>done(true);$('#askNo').onclick=()=>done(false);a.onclick=e=>{if(e.target===a)done(false);};});
+}
 function popLayer(){SHEETS.pop();const top=SHEETS[SHEETS.length-1];if(top&&top.reopen){top.reopen();armBack();}else{SHEETS.length=0;hideSheet();}}
 function closeSheet(){
   const n=SHEETS.length;SHEETS.length=0;hideSheet();
@@ -661,7 +684,7 @@ function switchTab(tab){
   try{const st=history.state||{};if(tab==='home'){if(st.t&&st.t!=='home'){suppressPop++;history.back();}}else if(!st.t||st.t==='home')history.pushState({t:tab,s:0},'');else history.replaceState({t:tab,s:0},'');}catch{}
 }
 function sec(id,title,small,body){const c=!!(S.meta.collapsed||{})[id];return `<div class="section"><button class="sh" data-act="toggle-sec" data-id="${id}" aria-expanded="${!c}"><h3>${title}${small?`<small>${small}</small>`:''}</h3><i class="chev${c?'':' open'}"></i></button>${c?'':body}</div>`;}
-function applyTheme(){const t=S.meta.theme||'';if(t)document.documentElement.dataset.theme=t;else delete document.documentElement.dataset.theme;}
+function applyTheme(){const t=S.meta.theme||'';if(t)document.documentElement.dataset.theme=t;else delete document.documentElement.dataset.theme;const z=S.meta.textSize||'';if(z)document.documentElement.dataset.text=z;else delete document.documentElement.dataset.text;}
 function recentPayees(n=6){const from=addDays(todayStr(),-90);const counts={};for(const t of live()){if(t.date<from||!t.payee||isTransfer(t)||t.amount>=0)continue;counts[t.payee]=(counts[t.payee]||0)+1;}return Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,n).map(([p])=>p);}
 function render(){
   $$('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===S.tab));
@@ -1039,7 +1062,8 @@ function serviceForecast(){
 function viewFuel(){
   const fs=S.meta.fuel||{};const list=fuelLive();const mk=S.month;
   const setup=`<div class="actions"><button class="btn primary" data-act="fuel-add" ${S.accounts.length?'':'disabled'}>Log fill-up</button><button class="btn" data-act="fuel-settings">Vehicle and service</button></div>`;
-  if(!list.length)return `<div class="section"><h3>Fuel</h3><p class="note">Log each fill-up with the odometer reading, litres and cost. Ledger then works out how far you drive, what fuel costs you per month and per kilometre, your consumption, and when the next ${fmtKm(fs.intervalKm||15000)} service is due. Each fill-up is also a transaction in the Fuel category.${S.accounts.length?'':' Add an account first.'}</p>${setup}</div>`;
+  const head=`<div class="pagehead"><h2>Fuel${fs.vehicle?` <small style="color:var(--ink-3);font-size:13px">${esc(fs.vehicle)}</small>`:''}</h2><button class="btn small" data-act="fuel-settings">Vehicle</button></div>`;
+  if(!list.length)return `${head}<div class="section"><h3>Fuel</h3><p class="note">Log each fill-up with the odometer reading, litres and cost. Ledger then works out how far you drive, what fuel costs you per month and per kilometre, your consumption, and when the next ${fmtKm(fs.intervalKm||15000)} service is due. Each fill-up is also a transaction in the Fuel category.${S.accounts.length?'':' Add an account first.'}</p>${setup}</div>`;
   const svc=serviceForecast();const last=list[list.length-1];
   let hero;
   if(svc){
@@ -1059,7 +1083,7 @@ function viewFuel(){
   const charts=sec('fuelprice','Price per litre','what you paid, monthly average',lineChartSVG(months.map(monthShort),[{name:'R per litre',color:fcol,values:stats.map(x=>x.ppl?x.ppl/100:null)}],{unit:'dec2',height:140})||'<p class="note">Needs fill-ups in more than one month.</p>')+(consSeg.length>1?sec('fuelcons','Consumption','L/100km between full tanks',lineChartSVG(consSeg.map(x=>dateLabel(x.date)),[{name:'L/100km',color:fcol,values:consSeg.map(x=>x.value)}],{unit:'dec1',height:140,avg:consSeg.reduce((a,x)=>a+x.value,0)/consSeg.length})):'');
   const table=`${charts}<div class="section"><h3>Spend by month<small>${pm.length>6?periodLabel(mk):'six months'}</small></h3>${periodBar()}${groupedBarsSVG(months,[{name:'Fuel',color:fcol,values:stats.map(x=>x.cost)}],{height:150})}<table class="cmp"><thead><tr><th>Month</th><th>km</th><th>Litres</th><th>R/L</th><th>Spend</th></tr></thead><tbody>${stats.filter(s=>s.n).map(s=>`<tr><td>${monthShort(s.m)}</td><td>${Math.round(s.km).toLocaleString('en-ZA')}</td><td>${fmtNum(s.litres,1)}</td><td>${s.ppl?fmtNum(s.ppl/100,2):'—'}</td><td>${fmtShort(s.cost)}</td></tr>`).join('')}</tbody></table></div>`;
   const rows=[...list].reverse().slice(0,40).map(f=>{const idx=list.indexOf(f);const prevF=idx>0?list[idx-1]:null;const km=prevF?f.odometer-prevF.odometer:null;return `<button class="item" data-act="fuel-edit" data-id="${f.id}"><span>${esc(f.station||'Fill-up')}<span class="sub">${dateLabel(f.date)}, ${fmtKm(f.odometer)}${km!=null?` (+${Math.round(km)} km)`:''}, ${fmtNum(f.litres,1)} L at ${fmtNum(f.pricePerL/100,2)}${f.full?'':', partial'}</span></span><span class="amt">${fmt(f.cost)}</span></button>`;}).join('');
-  return `${hero}${tiles}${setup}${table}<div class="section"><h3>Fill-ups</h3>${rows}</div>`;
+  return `${head}${hero}${tiles}${setup}${table}<div class="section"><h3>Fill-ups</h3>${rows}</div>`;
 }
 function openFuelSheet(id){
   if(!S.accounts.length){toast('Add an account first');openAccountSheet();return;}
@@ -1120,7 +1144,7 @@ function viewMore(){
   const storage=S.persisted===null?'':`<div class="kv"><span>Storage on this device</span><b>${S.persisted?'Protected from automatic clearing':'May be cleared by the system when space is low'}</b></div>`;
   const usage=S.usage?`<div class="kv"><span>Space used</span><b>${(S.usage/1024).toFixed(0)} KB</b></div>`:'';
   const install=deferredInstall?`<div class="actions"><button class="btn primary" data-act="install">Install on this phone</button></div>`:'';
-  return `
+  return `<div class="pagehead"><h2>More</h2></div>
   <div class="section"><h3>Accounts</h3>${accts||'<p class="note">No accounts yet.</p>'}<div class="actions"><button class="btn" data-act="add-account">Add account</button></div></div>
   <div class="section"><h3>Bank statements</h3><p class="note">Export a statement as CSV from your bank and import it here. Rows already imported are skipped, and entries you typed in by hand are matched rather than duplicated.</p><div class="actions"><button class="btn primary" data-act="import" ${S.accounts.length?'':'disabled'}>Import statement</button></div>${batches}</div>
   <div class="section"><h3>Categories and rules</h3><div class="actions"><button class="btn" data-act="categories">Categories</button><button class="btn" data-act="rules">Rules${S.rules.length?` (${S.rules.length})`:''}</button><button class="btn" data-act="recurring">Recurring payments${recurringPayees().length?` (${recurringPayees().length})`:''}</button></div></div>
@@ -1128,7 +1152,7 @@ function viewMore(){
   <div class="section"><h3>Back up</h3>${backupNote}<p class="note">Everything on this phone in one file. Restoring replaces what's here with the file's contents.</p><div class="actions"><button class="btn primary" data-act="export" ${txCount?'':'disabled'}>Export backup</button><button class="btn" data-act="restore">Restore from file</button><input id="restoreFile" type="file" accept=".json,application/json" hidden></div></div>
   <div class="section"><h3>Recently deleted</h3><div class="actions"><button class="btn" data-act="deleted" ${deleted?'':'disabled'}>${deleted?`${deleted} transaction${deleted===1?'':'s'}`:'Nothing deleted'}</button></div></div>
   <div class="section"><h3>This app</h3>${install}
-    <div class="field"><label for="theme">Appearance</label><select id="theme"><option value="" ${!S.meta.theme?'selected':''}>Match the phone</option><option value="light" ${S.meta.theme==='light'?'selected':''}>Light</option><option value="dark" ${S.meta.theme==='dark'?'selected':''}>Dark</option></select></div>
+    <div class="row2"><div class="field"><label for="theme">Appearance</label><select id="theme"><option value="" ${!S.meta.theme?'selected':''}>Match the phone</option><option value="light" ${S.meta.theme==='light'?'selected':''}>Light</option><option value="dark" ${S.meta.theme==='dark'?'selected':''}>Dark</option></select></div><div class="field"><label for="textSize">Text size</label><select id="textSize"><option value="" ${!S.meta.textSize?'selected':''}>Normal</option><option value="large" ${S.meta.textSize==='large'?'selected':''}>Large</option></select></div></div>
     ${storage}${usage}<div class="kv"><span>Cloud sync</span><b>Not set up yet</b></div><div class="kv"><span>Version</span><b>${APP_VERSION}</b></div></div>`;
 }
 
@@ -1141,6 +1165,7 @@ function bindView(){
   $$('[data-rev-ok]').forEach(b=>b.onclick=async()=>{const t=S.transactions.find(x=>x.id===da(b,'rev-ok'));if(!t)return;t.reviewed=true;t.updatedAt=nowISO();await upsertTxns([t]);if(!live().some(x=>x.source==='import'&&!x.reviewed)){S.filterReview=false;toast('All reviewed');}render();});
   $$('[data-budget]').forEach(inp=>{inp.onchange=async()=>{const c=parseAmountInput(inp.value);await setBudget(inp.dataset.budget,S.month,c==null?0:c);render();};});
   const th=$('#theme');if(th)th.onchange=async()=>{await setMeta('theme',th.value);applyTheme();};
+  const ts=$('#textSize');if(ts)ts.onchange=async()=>{await setMeta('textSize',ts.value);applyTheme();};
   const rf=$('#restoreFile');if(rf)rf.onchange=()=>{if(rf.files[0])restoreBackup(rf.files[0]);rf.value='';};
 }
 const ACTIONS={
@@ -1185,6 +1210,12 @@ document.addEventListener('click',e=>{
 $$('#tabs button').forEach(b=>b.onclick=()=>switchTab(b.dataset.tab));
 (()=>{let x0=null,y0=null;const v=$('#view');v.addEventListener('touchstart',e=>{const t=e.touches[0];x0=t.clientX;y0=t.clientY;},{passive:true});v.addEventListener('touchend',e=>{if(x0==null)return;const t=e.changedTouches[0];const dx=t.clientX-x0,dy=t.clientY-y0;x0=null;if(Math.abs(dx)>70&&Math.abs(dy)<40&&['home','txns','budget'].includes(S.tab)){S.month=shiftMonth(S.month,dx<0?1:-1);render();}},{passive:true});})();
 $('#sheet').addEventListener('click',e=>{if(e.target===$('#sheet'))closeSheet();});
+(()=>{const head=$('#sheet .head'),panel=$('#sheet .panel');let y0=null,dy=0;
+  head.addEventListener('touchstart',e=>{y0=e.touches[0].clientY;dy=0;panel.style.transition='none';},{passive:true});
+  head.addEventListener('touchmove',e=>{if(y0==null)return;dy=Math.max(0,e.touches[0].clientY-y0);panel.style.transform=`translateY(${dy}px)`;},{passive:true});
+  head.addEventListener('touchend',()=>{if(y0==null)return;panel.style.transition='';if(dy>90){panel.style.transform='translateY(100%)';setTimeout(()=>{panel.style.transform='';closeSheet();},180);}else panel.style.transform='';y0=null;},{passive:true});})();
+document.addEventListener('keydown',e=>{if(e.key!=='Enter'||$('#sheet').hidden)return;const t=e.target;if(!t||!t.matches||!t.matches('#sheet input:not([type=file])'))return;const p=$('#sheet .foot .btn.primary');if(p&&!p.disabled){e.preventDefault();t.blur();p.click();}});
+document.addEventListener('click',e=>{if(e.target.closest('[data-act]'))return;const svg=e.target.closest&&e.target.closest('svg.chart, svg.ring');if(!svg)return;const el=e.target.closest('rect, circle, path, line');const ttl=el&&el.querySelector&&el.querySelector('title');if(ttl&&ttl.textContent)toast(ttl.textContent);});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#sheet').hidden)closeSheet();});
 
 /* ================= transaction sheet ================= */
@@ -1233,7 +1264,7 @@ function openTxnSheet(id,pre){
   $('#fSave').onclick=()=>saveTxnForm(ex,counterpart,()=>kind,pre,false);
   const more=$('#fMore');if(more)more.onclick=()=>saveTxnForm(ex,counterpart,()=>kind,pre,true);
   if(ex)$('#fDel').onclick=()=>deleteTxn(ex.id);
-  if(!ex&&!pre.amount)setTimeout(()=>$('#fAmt')?.focus(),60);
+  if(!ex&&!pre.amount){const a=$('#fAmt');a.focus();a.setAttribute('enterkeyhint','done');}
 }
 async function saveTxnForm(ex,counterpart,getKind,pre,another){
   const kind=getKind();const cents=parseAmountInput($('#fAmt').value);
@@ -1288,8 +1319,8 @@ function openAccountSheet(id){
     await upsert('accounts','accounts',a);if(!ex&&!accById(S.meta.lastAccountId))await setMeta('lastAccountId',a.id);
     sheetDone();render();toast(ex?'Saved':'Account added');
   };
-  if(ex&&canDelete)$('#aDel').onclick=async()=>{if(!confirm(`Delete ${ex.name}?`))return;S.accounts=S.accounts.filter(a=>a.id!==ex.id);await dbDeleteMany('accounts',[ex.id]);sheetDone();render();toast('Account deleted');};
-  if(!ex)setTimeout(()=>$('#aName')?.focus(),60);
+  if(ex&&canDelete)$('#aDel').onclick=async()=>{if(!await ask(`Delete ${ex.name}?`,'Delete',true))return;S.accounts=S.accounts.filter(a=>a.id!==ex.id);await dbDeleteMany('accounts',[ex.id]);sheetDone();render();toast('Account deleted');};
+  if(!ex)$('#aName').focus();
 }
 
 /* ================= categories UI ================= */
@@ -1325,7 +1356,7 @@ function openCategorySheet(id,parentId){
   if(ex&&!ex.system)$('#cDel').onclick=async()=>{
     if(ex.id===fuelCatId()){toast("Fuel is used by the fuel tracker and can't be deleted");return;}
     const msg=`Delete ${ex.name}?${kids.length?` Its ${kids.length} sub-categor${kids.length===1?'y':'ies'} go too.`:''}${used?` ${used} transaction${used===1?'':'s'} will move to Uncategorised.`:''}`;
-    if(!confirm(msg))return;
+    if(!await ask(msg,'Delete',true))return;
     const ids=[ex.id,...kids.map(k=>k.id)];
     const moved=S.transactions.filter(t=>ids.includes(t.categoryId));for(const t of moved)t.categoryId='cat_uncat';
     await upsertTxns(moved);
@@ -1334,7 +1365,7 @@ function openCategorySheet(id,parentId){
     S.categories=S.categories.filter(c=>!ids.includes(c.id));await dbDeleteMany('categories',ids);
     render();if(SHEETS.length>1)sheetBack();else openCategoriesList();toast('Deleted');
   };
-  if(!ex)setTimeout(()=>$('#cName')?.focus(),60);
+  if(!ex)$('#cName').focus();
 }
 
 /* ================= rules ================= */
@@ -1524,7 +1555,7 @@ async function runImport(){
 }
 async function rollbackImport(id){
   const b=S.batches.find(x=>x.id===id);if(!b)return;
-  if(!confirm(`Undo this import? ${b.created} imported transactions will be removed and ${b.matched} matched entries unlinked.`))return;
+  if(!await ask(`Undo this import? ${b.created} imported transactions will be removed and ${b.matched} matched entries unlinked.`,'Undo import',true))return;
   const remove=[],unlink=[];
   for(const t of S.transactions){if(t.importBatchId!==id)continue;if(t.source==='import')remove.push(t.id);else{delete t.fingerprint;delete t.importBatchId;delete t.matchedAt;delete t.bankDescription;t.updatedAt=nowISO();unlink.push(t);}}
   S.transactions=S.transactions.filter(t=>!remove.includes(t.id));
@@ -1539,7 +1570,7 @@ function openDeleted(){
   const rows=list.map(t=>`<div class="item"><span>${esc(t.payee||catName(t.categoryId))}<span class="sub">${dateLabel(t.date)}, ${esc(accById(t.accountId)?.name||'')}</span></span><span class="amt">${fmt(t.amount)}</span><button class="btn small" data-restore="${t.id}">Restore</button></div>`).join('');
   openSheet('Recently deleted',rows||'<p class="empty">Nothing here.</p>',list.length?`<button class="btn danger" id="dPurge">Delete all permanently</button><button class="btn primary" data-act="close-sheet">Done</button>`:'',{key:'deleted',reopen:()=>openDeleted()});
   $$('[data-restore]').forEach(b=>b.onclick=async()=>{const t=S.transactions.find(x=>x.id===b.dataset.restore);delete t.deletedAt;const f=t.fuelId?S.fuel.find(x=>x.id===t.fuelId):null;if(f){delete f.deletedAt;await upsert('fuel','fuel',f);}await upsertTxns([t]);openDeleted();render();toast('Restored');});
-  const p=$('#dPurge');if(p)p.onclick=async()=>{if(!confirm(`Permanently delete ${list.length} transaction${list.length===1?'':'s'}? This can't be undone.`))return;const ids=list.map(t=>t.id);S.transactions=S.transactions.filter(t=>!ids.includes(t.id));await dbDeleteMany('transactions',ids);const fids=S.fuel.filter(f=>f.deletedAt).map(f=>f.id);S.fuel=S.fuel.filter(f=>!f.deletedAt);await dbDeleteMany('fuel',fids);closeSheet();render();toast('Deleted permanently');};
+  const p=$('#dPurge');if(p)p.onclick=async()=>{if(!await ask(`Permanently delete ${list.length} transaction${list.length===1?'':'s'}? This can't be undone.`,'Delete permanently',true))return;const ids=list.map(t=>t.id);S.transactions=S.transactions.filter(t=>!ids.includes(t.id));await dbDeleteMany('transactions',ids);const fids=S.fuel.filter(f=>f.deletedAt).map(f=>f.id);S.fuel=S.fuel.filter(f=>!f.deletedAt);await dbDeleteMany('fuel',fids);closeSheet();render();toast('Deleted permanently');};
 }
 
 /* ================= backup ================= */
@@ -1557,10 +1588,10 @@ async function restoreBackup(file){
   try{data=JSON.parse(await file.text());}catch{toast("That file isn't a Ledger backup");return;}
   await restoreData(data,true);
 }
-async function restoreData(data,ask){
+async function restoreData(data,askFirst){
   if(!data||data.app!=='ledger'||!Array.isArray(data.transactions)){toast("That file isn't a Ledger backup");return false;}
   const n=data.transactions.filter(t=>!t.deletedAt).length;
-  if(ask&&!confirm(`Replace everything on this phone with the backup from ${String(data.exportedAt||'').slice(0,10)}? It holds ${n} transactions and ${(data.accounts||[]).length} accounts.`))return false;
+  if(askFirst&&!await ask(`Replace everything on this phone with the backup from ${String(data.exportedAt||'').slice(0,10)}? It holds ${n} transactions and ${(data.accounts||[]).length} accounts.`,'Restore',true))return false;
   for(const s of STORES)await dbClear(s);
   await dbPutMany('accounts',data.accounts||[]);await dbPutMany('categories',data.categories||[]);await dbPutMany('transactions',data.transactions||[]);
   await dbPutMany('budgets',data.budgets||[]);await dbPutMany('rules',data.rules||[]);await dbPutMany('importBatches',data.importBatches||[]);await dbPutMany('fuel',data.fuel||[]);
@@ -1587,7 +1618,7 @@ async function init(){
   }
 }
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;if(S.tab==='more')render();});
-window.Ledger={S,fn:{parseCSV,parseDate,parseAmount,detectTable,guessMapping,parseImportRows,runImport,rollbackImport,loadImportText,openImporter,renderPreview,upsertTxns,deleteTxn,setBudget,monthTotals,spentFor,spentTop,spentLeaf,effectiveLimit,projectionFor,insights,accountBalance,backupJSON,restoreData,applyRules,cleanPayee,render,openTxnSheet,saveTxnForm,openAccountSheet,openCategoriesList,openCategorySheet,openCatDetail,setMeta,openFuelSheet,openFuelSettings,fuelStats,consumption,consumptionSeries,drivingPace,serviceForecast,fuelCatId,topCats,childrenOf,statusOf,periodMonths,periodLabel,leafMapFor,topMapFor,totalsFor,payeesFor,openPayeeDetail,openDayDetail,recurringPayees,sankeySVG,treemapSVG,netWorthSeries,homeLayout,openLayoutSheet,openRecurringSheet,switchTab,sheetBack,sheetDone,burnUpSVG,heatmapHTML,weekdayProfile,stackedBarsSVG,get SHEETS(){return SHEETS;},donutSVG,ringSVG,groupedBarsSVG,lineChartSVG,get IMP(){return IMP;},set IMP(v){IMP=v;}}};
+window.Ledger={S,fn:{parseCSV,parseDate,parseAmount,detectTable,guessMapping,parseImportRows,runImport,rollbackImport,loadImportText,openImporter,renderPreview,upsertTxns,deleteTxn,setBudget,monthTotals,spentFor,spentTop,spentLeaf,effectiveLimit,projectionFor,insights,accountBalance,backupJSON,restoreData,applyRules,cleanPayee,render,openTxnSheet,saveTxnForm,openAccountSheet,openCategoriesList,openCategorySheet,openCatDetail,setMeta,openFuelSheet,openFuelSettings,fuelStats,consumption,consumptionSeries,drivingPace,serviceForecast,fuelCatId,topCats,childrenOf,statusOf,periodMonths,periodLabel,leafMapFor,topMapFor,totalsFor,payeesFor,openPayeeDetail,openDayDetail,ask,recurringPayees,sankeySVG,treemapSVG,netWorthSeries,homeLayout,openLayoutSheet,openRecurringSheet,switchTab,sheetBack,sheetDone,burnUpSVG,heatmapHTML,weekdayProfile,stackedBarsSVG,get SHEETS(){return SHEETS;},donutSVG,ringSVG,groupedBarsSVG,lineChartSVG,get IMP(){return IMP;},set IMP(v){IMP=v;}}};
 window.LedgerReady=init().catch(e=>{console.error(e);$('#view').innerHTML=`<p class="empty bad">Ledger couldn't open its storage: ${esc(e.message||e)}. Try a different browser, or check that private browsing is off.</p>`;});
 </script>
 </body>
