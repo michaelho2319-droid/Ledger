@@ -215,6 +215,9 @@ body.sheet-open{overflow:hidden}
 .chart .tl2{font-size:10.5px;fill:#fff;opacity:.9}
 .chart [data-act]{cursor:pointer}
 .emo{margin-right:6px;font-size:.95em}
+.rep{font-style:normal;color:var(--ink-3);margin-left:6px;font-size:13px}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:9px;background:var(--paper-2);color:var(--ink-2);margin-left:6px;vertical-align:1px}
+.tag.on{background:color-mix(in srgb,var(--green) 18%,var(--paper-2));color:var(--green)}
 .rev{padding:10px 0;border-bottom:1px solid var(--rule)}
 .rev .rtop{display:flex;gap:10px;align-items:baseline}
 .rev .rtop .payee{flex:1;font-weight:500;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -312,13 +315,13 @@ table.prev{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
 
 <script>
 'use strict';
-const APP_VERSION='0.7.1';
+const APP_VERSION='0.8.0';
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 
 /* ================= storage ================= */
-const DB_NAME='ledger', DB_VERSION=2;
-const STORES=['meta','accounts','categories','transactions','budgets','rules','importBatches','fuel'];
+const DB_NAME='ledger', DB_VERSION=3;
+const STORES=['meta','accounts','categories','transactions','budgets','rules','importBatches','fuel','schedules'];
 let db=null;
 function openDB(){
   return new Promise((resolve,reject)=>{
@@ -335,7 +338,7 @@ function dbDeleteMany(store,ids){return new Promise((res,rej)=>{if(!ids.length)r
 function dbClear(store){return new Promise((res,rej)=>{const t=db.transaction(store,'readwrite');t.objectStore(store).clear();t.oncomplete=()=>res();t.onerror=()=>rej(t.error);});}
 
 /* ================= state ================= */
-const S={accounts:[],categories:[],transactions:[],budgets:[],rules:[],batches:[],fuel:[],meta:{},
+const S={accounts:[],categories:[],transactions:[],budgets:[],rules:[],batches:[],fuel:[],schedules:[],meta:{},
   tab:'home',month:'',period:1,openDetail:null,search:'',filterAccount:'',filterCat:'',filterReview:false,persisted:null,usage:null};
 let deferredInstall=null;
 let IMP=null;
@@ -474,9 +477,9 @@ async function upsert(store,arrName,obj){
   await dbPut(store,obj);
 }
 async function loadAll(){
-  const [accounts,categories,transactions,budgets,rules,batches,fuel,metaRows]=await Promise.all(
-    ['accounts','categories','transactions','budgets','rules','importBatches','fuel','meta'].map(dbAll));
-  Object.assign(S,{accounts,categories,transactions,budgets,rules,batches,fuel});
+  const [accounts,categories,transactions,budgets,rules,batches,fuel,schedules,metaRows]=await Promise.all(
+    ['accounts','categories','transactions','budgets','rules','importBatches','fuel','schedules','meta'].map(dbAll));
+  Object.assign(S,{accounts,categories,transactions,budgets,rules,batches,fuel,schedules});
   S.meta={};for(const m of metaRows)S.meta[m.id]=m.value;
   if(!S.categories.length){S.categories=seedCategories();await dbPutMany('categories',S.categories);}
   await migrateCategories();
@@ -491,15 +494,19 @@ function spentLeaf(mk){const m={};for(const t of live()){if(!inMonth(t,mk)||!isS
 function spentTop(mk){const leaf=spentLeaf(mk),m={};for(const [id,v] of Object.entries(leaf)){const t=topOf(id);const k=t?t.id:'cat_uncat';m[k]=(m[k]||0)+v;}return m;}
 function spentFor(catId,mk){const leaf=spentLeaf(mk);let v=leaf[catId]||0;for(const c of childrenOf(catId))v+=leaf[c.id]||0;return v;}
 function incomeIn(mk){let s=0;for(const t of live()){if(!inMonth(t,mk)||isTransfer(t))continue;if(isIncomeCat(t.categoryId)||(t.categoryId==='cat_uncat'&&t.amount>0))s+=t.amount;}return s;}
-function limitFor(catId,mk){return S.budgets.find(b=>b.categoryId===catId&&b.month===mk)?.amount||0;}
+function limitRecord(catId,mk){let best=null;for(const b of S.budgets){if(b.categoryId!==catId||b.month>mk)continue;if(!best||b.month>best.month)best=b;}return best;}
+function limitFor(catId,mk){const b=limitRecord(catId,mk);return b?b.amount:0;}
+function limitSince(catId,mk){const b=limitRecord(catId,mk);return b&&b.amount>0&&b.month<mk?b.month:null;}
 function effectiveLimit(catId,mk){const own=limitFor(catId,mk);if(own)return {amount:own,derived:false};const sum=childrenOf(catId).reduce((s,c)=>s+limitFor(c.id,mk),0);return {amount:sum,derived:true};}
 function totalLimit(mk){return topCats().filter(c=>!c.income).reduce((s,c)=>s+effectiveLimit(c.id,mk).amount,0);}
 function monthTotals(mk){const spent=Object.values(spentLeaf(mk)).reduce((a,b)=>a+b,0);return {income:incomeIn(mk),spent,budgeted:totalLimit(mk)};}
 function accountBalance(a){let b=a.openingBalance||0;for(const t of live())if(t.accountId===a.id)b+=t.amount;return b;}
 async function setBudget(catId,mk,amount){
+  // A limit stays in force for every later month until it is changed; clearing it stores a zero so earlier months keep theirs.
   const id=catId+'|'+mk;
+  const earlier=S.budgets.some(b=>b.categoryId===catId&&b.month<mk&&b.amount>0);
   S.budgets=S.budgets.filter(b=>b.id!==id);
-  if(amount>0){const b={id,categoryId:catId,month:mk,amount};S.budgets.push(b);await dbPut('budgets',b);}
+  if(amount>0||earlier){const b={id,categoryId:catId,month:mk,amount:Math.max(0,amount||0)};S.budgets.push(b);await dbPut('budgets',b);}
   else await dbDeleteMany('budgets',[id]);
 }
 function spendBetween(from,to,catId){let s=0;for(const t of live()){if(t.date<from||t.date>to||!isSpend(t))continue;if(catId&&!inCat(t,catId))continue;s-=t.amount;}return s;}
@@ -511,8 +518,10 @@ function projectionFor(mk,catId){
   if(mk>cur)return null;
   const d=Number(today.slice(8));const R=dim-d;const endM=mk+'-'+pad(dim);
   // known recurring payments still due this month, plus the variable pace of the last 30 days with recurring amounts taken out
-  const rec=recurringPayees().filter(r=>!catId||catWithin(r.categoryId,catId));
+  const schedNames=new Set(S.schedules.filter(sc=>sc.active).map(sc=>normText(sc.payee)));
+  const rec=recurringPayees().filter(r=>(!catId||catWithin(r.categoryId,catId))&&!schedNames.has(normText(r.payee)));
   let upcoming=0,recIn30=0;
+  for(const sc of S.schedules){if(!sc.active||sc.amount>=0)continue;if(catId&&!catWithin(sc.categoryId,catId))continue;const nd=nextScheduledDate(sc);if(nd&&nd>today&&nd<=endM)upcoming+=-sc.amount;recIn30+=-sc.amount;}
   for(const r of rec){if(r.step===null){if(r.next>today&&r.next<=endM)upcoming+=r.amount;}else{let nd=r.next;while(nd<=endM){if(nd>today)upcoming+=r.amount;nd=addDays(nd,r.step);}}recIn30+=r.amount*(r.step===null?1:r.step===14?2:4);}
   const win=spendBetween(addDays(today,-29),today,catId);
   const daily=Math.max(0,win-Math.min(win,recIn30))/30;
@@ -539,6 +548,39 @@ function recurringPayees(){
   }
   out.sort((a,b)=>a.next.localeCompare(b.next));
   recMemo={ver:DATA_VER,list:out};return out;
+}
+const ordinal=n=>n+(n%100>=11&&n%100<=13?'th':['th','st','nd','rd'][Math.min(n%10,4)]||'th');
+const ord=n=>n+(n%100>=11&&n%100<=13?'th':n%10===1?'st':n%10===2?'nd':n%10===3?'rd':'th');
+function schedDate(sc,m){return m+'-'+pad(Math.min(sc.day,daysInMonth(m)));}
+function nextScheduledDate(sc){
+  const today=todayStr();let m=sc.lastMonth?shiftMonth(sc.lastMonth,1):(sc.startMonth||today.slice(0,7));
+  if(m<today.slice(0,7))m=today.slice(0,7);
+  let date=schedDate(sc,m);if(date<today){m=shiftMonth(m,1);date=schedDate(sc,m);}
+  if(sc.endMonth&&date.slice(0,7)>sc.endMonth)return null;
+  return date;
+}
+async function generateScheduled(){
+  const today=todayStr(),cur=today.slice(0,7);const created=[],changed=[];
+  for(const sc of S.schedules){
+    if(!sc.active)continue;
+    let m=sc.lastMonth?shiftMonth(sc.lastMonth,1):(sc.startMonth||cur);
+    while(m<=cur){
+      if(sc.endMonth&&m>sc.endMonth)break;
+      const date=schedDate(sc,m);if(date>today)break;
+      if(!S.transactions.some(t=>t.scheduleId===sc.id&&t.date.slice(0,7)===m)){
+        const now=nowISO();created.push({id:uid(),accountId:sc.accountId,date,amount:sc.amount,payee:sc.payee,categoryId:catById(sc.categoryId)?sc.categoryId:'cat_uncat',note:sc.note||'',source:'scheduled',reviewed:true,scheduleId:sc.id,createdAt:now,updatedAt:now});
+      }
+      sc.lastMonth=m;sc.updatedAt=nowISO();if(!changed.includes(sc))changed.push(sc);
+      m=shiftMonth(m,1);
+    }
+  }
+  if(created.length)await upsertTxns(created);
+  if(changed.length)await dbPutMany('schedules',changed);
+  return created;
+}
+async function runScheduled(){
+  const made=await generateScheduled();
+  if(made.length){render();toast(`Added ${made.length===1?made[0].payee:made.length+' monthly payments'}${made.length===1?' for '+dateLabel(made[0].date):''}`,{action:'Undo',onAction:async()=>{const now=nowISO();for(const t of made)t.deletedAt=now;await upsertTxns(made);render();}});}
 }
 function dueLabel(ds){const n=daysBetween(todayStr(),ds);return n<=0?'today':n===1?'tomorrow':`in ${n} days, ${dateLabel(ds)}`;}
 function statusOf(spent,limit){if(!limit)return 'none';if(spent>limit)return 'over';if(spent/limit>=0.85)return 'warn';return 'ok';}
@@ -862,8 +904,12 @@ function viewHome(){
   const pace=burn?sec('pace','Pace',monthName(mk),`${burn}<div class="legend"><span><i style="background:var(--ink)"></i>This month</span><span><i style="background:var(--ink-3);opacity:.6"></i>${monthName(shiftMonth(mk,-1))}</span>${tot.budgeted?'<span><i class="p" style="border-color:var(--green)"></i>Limit at even pace</span>':''}${mid&&mk===cur?'<span><i class="p" style="border-color:var(--amber)"></i>Projected</span>':''}</div><p class="note">Above the dashed line means you're spending faster than the limit allows; below it, slower.</p>`):'';
   const limited=cats().filter(c=>!c.system&&!isIncomeCat(c.id)&&effectiveLimit(c.id,mk).amount>0).filter(c=>!c.parentId||!effectiveLimit(c.parentId,mk).amount||limitFor(c.id,mk));
   const chips=limited.length?sec('limits','Limits',monthName(mk),`<div class="chips">${limited.map(c=>{const l=effectiveLimit(c.id,mk).amount,sp=spentFor(c.id,mk);const st=statusOf(sp,l);return `<button class="chip ${st}" data-act="cat-detail" data-id="${c.id}"><i class="swatch" style="background:${colorOf(c.id)}"></i>${catIcon(c.id)}${esc(c.name)} <b>${Math.round(sp/l*100)}%</b></button>`;}).join('')}</div>`):'';
-  const rec=recurringPayees();const soon=rec.filter(r=>daysBetween(todayStr(),r.next)<=14);const fixedMonthly=rec.reduce((a,r)=>a+r.monthly,0);
-  const upcoming=rec.length?sec('upcoming','Coming up','next 14 days',`${soon.length?soon.map(r=>`<button class="item" data-act="payee-detail" data-id="${esc(r.payee)}"><span>${catIcon(r.categoryId)}${esc(r.payee)}<span class="sub">${esc(catName(r.categoryId))}, ${r.interval}${r.fixed?'':', amount varies'}</span></span><span class="amt">${fmtShort(r.amount)}<span class="sub" style="display:block;text-align:right">${dueLabel(r.next)}</span></span></button>`).join(''):'<p class="note">Nothing due in the next two weeks.</p>'}<p class="note">${rec.length} recurring payment${rec.length===1?'':'s'} spotted, about ${fmtShort(fixedMonthly)} a month. <button data-act="recurring" style="text-decoration:underline">See all</button></p>`):'';
+  const schedNames=new Set(S.schedules.filter(sc=>sc.active).map(sc=>normText(sc.payee)));
+  const schedUp=S.schedules.filter(sc=>sc.active&&sc.amount<0).map(sc=>({id:sc.id,payee:sc.payee,categoryId:sc.categoryId,amount:-sc.amount,next:nextScheduledDate(sc),scheduled:true,interval:'monthly',fixed:true})).filter(x=>x.next);
+  const rec=recurringPayees().filter(r=>!schedNames.has(normText(r.payee)));
+  const allUp=[...schedUp,...rec].sort((a,b)=>a.next.localeCompare(b.next));const soon=allUp.filter(x=>daysBetween(todayStr(),x.next)<=14);
+  const schedMonthly=schedUp.reduce((a,x)=>a+x.amount,0),spotMonthly=rec.reduce((a,r)=>a+r.monthly,0);
+  const upcoming=allUp.length?sec('upcoming','Coming up','next 14 days',`${soon.length?soon.map(r=>`<button class="item" ${r.scheduled?`data-act="schedule" data-id="${r.id}"`:`data-act="payee-detail" data-id="${esc(r.payee)}"`}><span>${catIcon(r.categoryId)}${esc(r.payee)}<span class="tag ${r.scheduled?'on':''}">${r.scheduled?'scheduled':'spotted'}</span><span class="sub">${esc(catName(r.categoryId))}, ${r.interval}${r.fixed?'':', amount varies'}</span></span><span class="amt">${fmtShort(r.amount)}<span class="sub" style="display:block;text-align:right">${dueLabel(r.next)}</span></span></button>`).join(''):'<p class="note">Nothing due in the next two weeks.</p>'}<p class="note">${schedUp.length?`${fmtShort(schedMonthly)} a month in scheduled payments`:''}${schedUp.length&&rec.length?', plus ':''}${rec.length?`about ${fmtShort(spotMonthly)} a month spotted from your history`:''}. <button data-act="recurring" style="text-decoration:underline">See all</button></p>`):'';
   const months=periodMonths(mk);const multi=months.length>1;const prev=shiftMonth(mk,-1);
   const st=topMapFor(leafMapFor(months));
   const prevLabel=multi?((S.period==='ytd'||S.period==='all')?'':`previous ${months.length} months`):monthShort(prev);
@@ -903,7 +949,8 @@ function rowHTML(t,showDate){
   const acc=accById(t.accountId);const cls=isTransfer(t)?'tr':t.amount>0?'in':'';
   const dot=t.source==='import'&&!t.reviewed?'<i class="dot" title="Not reviewed yet"></i>':'';
   const date=showDate==='full'?`${dateLabel(t.date)}<span class="yr">${t.date.slice(0,4)}</span>`:showDate?dateLabel(t.date):'';
-  return `<button class="row" data-act="edit-txn" data-id="${t.id}"><span class="date">${date}</span><span class="main"><span class="payee">${dot}${esc(t.payee||catName(t.categoryId))}</span><span class="meta"><i class="swatch" style="background:${colorOf(t.categoryId)};width:7px;height:7px;margin-right:6px"></i>${esc(catName(t.categoryId))}<span class="acc">${esc(acc?.name||'')}</span></span></span><span class="amt ${cls}">${fmt(t.amount)}</span></button>`;
+  const rep=t.scheduleId?'<i class="rep" title="Repeats monthly">⟳</i>':'';
+  return `<button class="row" data-act="edit-txn" data-id="${t.id}"><span class="date">${date}</span><span class="main"><span class="payee">${dot}${esc(t.payee||catName(t.categoryId))}${rep}</span><span class="meta"><i class="swatch" style="background:${colorOf(t.categoryId)};width:7px;height:7px;margin-right:6px"></i>${esc(catName(t.categoryId))}<span class="acc">${esc(acc?.name||'')}</span></span></span><span class="amt ${cls}">${fmt(t.amount)}</span></button>`;
 }
 function openCatDetail(id){
   const c=catById(id);if(!c)return;
@@ -952,9 +999,43 @@ function openLayoutSheet(){
   $$('[data-lay]').forEach(b=>b.onclick=async()=>{const {order,hidden}=homeLayout();const id=da(b,'id');const i=order.indexOf(id);if(da(b,'lay')==='up'&&i>0)[order[i-1],order[i]]=[order[i],order[i-1]];if(da(b,'lay')==='down'&&i<order.length-1)[order[i+1],order[i]]=[order[i],order[i+1]];if(da(b,'lay')==='toggle')hidden[id]=!hidden[id];await setMeta('layout',{order,hidden});if(SHEETS.length&&SHEETS[SHEETS.length-1].key==='layout')openLayoutSheet();render();});
 }
 function openRecurringSheet(){
-  const rec=recurringPayees();const monthly=rec.reduce((a,r)=>a+r.monthly,0);
-  const rows=rec.map(r=>`<button class="item" data-act="payee-detail" data-id="${esc(r.payee)}"><span>${catIcon(r.categoryId)}${esc(r.payee)}<span class="sub">${esc(catName(r.categoryId))}, ${r.interval}${r.fixed?'':', amount varies'}, seen ${r.count} times, last ${dateLabel(r.last)}</span></span><span class="amt">${fmtShort(r.amount)}<span class="sub" style="display:block;text-align:right">${dueLabel(r.next)}</span></span></button>`).join('');
-  openSheet('Recurring payments',`<div class="bignum"><span class="num">${fmtShort(monthly)}</span></div><p class="note" style="margin-top:2px">a month in payments that repeat on a regular rhythm, ${rec.length} of them</p>${rows||'<p class="empty">Nothing spotted yet. A payment counts once it has appeared three times at a steady weekly, fortnightly or monthly interval.</p>'}<p class="note">Detected from your history, so a cancelled subscription drops off once two cycles pass without it. Known bills are added to the month's projection instead of being guessed from your daily pace.</p>`,`<button class="btn primary" data-act="close-sheet">Done</button>`,{key:'recurring',reopen:()=>openRecurringSheet()});
+  const scheds=S.schedules.slice().sort((a,b)=>(b.active?1:0)-(a.active?1:0)||a.day-b.day);
+  const schedNames=new Set(S.schedules.filter(sc=>sc.active).map(sc=>normText(sc.payee)));
+  const rec=recurringPayees().filter(r=>!schedNames.has(normText(r.payee)));
+  const schedMonthly=scheds.filter(sc=>sc.active).reduce((a,sc)=>a+Math.abs(sc.amount),0);
+  const srows=scheds.map(sc=>{const nd=sc.active?nextScheduledDate(sc):null;return `<button class="item" data-act="schedule" data-id="${sc.id}"><span>${catIcon(sc.categoryId)}${esc(sc.payee)}${sc.active?'':'<span class="tag">stopped</span>'}<span class="sub">${esc(catName(sc.categoryId))}, ${esc(accById(sc.accountId)?.name||'')}, on the ${ord(sc.day)}${sc.day>=29?' (or the last day)':''}</span></span><span class="amt ${sc.amount>0?'in':''}">${fmtShort(Math.abs(sc.amount))}<span class="sub" style="display:block;text-align:right">${nd?dueLabel(nd):'—'}</span></span></button>`;}).join('');
+  const rrows=rec.map(r=>`<button class="item" data-act="payee-detail" data-id="${esc(r.payee)}"><span>${catIcon(r.categoryId)}${esc(r.payee)}<span class="sub">${esc(catName(r.categoryId))}, ${r.interval}${r.fixed?'':', amount varies'}, seen ${r.count} times</span></span><span class="amt">${fmtShort(r.amount)}<span class="sub" style="display:block;text-align:right">${dueLabel(r.next)}</span></span></button>`).join('');
+  openSheet('Monthly payments',`<div class="bignum"><span class="num">${fmtShort(schedMonthly)}</span></div><p class="note" style="margin-top:2px">a month in scheduled payments${scheds.filter(x=>x.active).length?`, ${scheds.filter(x=>x.active).length} of them`:''}</p>
+    <div class="section"><h3>Scheduled<small>added automatically each month</small></h3>${srows||'<p class="note">Nothing scheduled yet. Turn on "Repeats every month" when adding a payment, or add one here.</p>'}<div class="actions"><button class="btn" data-act="schedule-new">New monthly payment</button></div></div>
+    ${rec.length?`<div class="section"><h3>Spotted from your history<small>not scheduled</small></h3>${rrows}<p class="note">These recur on their own but aren't added automatically. Tap one, then "Rule for this shop" to categorise it, or schedule it above.</p></div>`:''}`,`<button class="btn primary" data-act="close-sheet">Done</button>`,{key:'recurring',reopen:()=>openRecurringSheet()});
+}
+function openScheduleSheet(id,pre){
+  if(!S.accounts.length){toast('Add an account first');openAccountSheet();return;}
+  const ex=id?S.schedules.find(x=>x.id===id):null;pre=pre||{};
+  let kind=ex?(ex.amount>0?'income':'expense'):(pre.kind||'expense');
+  const today=todayStr();const day=ex?ex.day:(pre.day||Number(today.slice(8)));
+  const defStart=(Number(today.slice(8))>day)?shiftMonth(today.slice(0,7),1):today.slice(0,7);
+  const html=`<div class="seg" id="skind"><button type="button" data-k="expense" class="${kind==='expense'?'on':''}">Expense</button><button type="button" data-k="income" class="${kind==='income'?'on':''}">Income</button></div>
+    <div class="field"><label for="sAmt">Amount each month</label><input id="sAmt" class="big" inputmode="decimal" placeholder="0,00" value="${ex?(Math.abs(ex.amount)/100).toFixed(2).replace('.',','):(pre.amount?(pre.amount/100).toFixed(2).replace('.',','):'')}"></div>
+    <div class="field"><label for="sPayee">Payee</label><input id="sPayee" list="payees" autocomplete="off" placeholder="e.g. Landlord" value="${esc(ex?.payee||pre.payee||'')}"><datalist id="payees">${payeeOptions()}</datalist></div>
+    <div class="field"><label for="sCat">Category</label><select id="sCat">${catOptions(kind,ex?.categoryId||pre.categoryId)}</select></div>
+    <div class="row2"><div class="field"><label for="sAcc">Account</label><select id="sAcc">${accOptions(ex?.accountId||pre.accountId||(accById(S.meta.lastAccountId)?S.meta.lastAccountId:S.accounts[0].id))}</select></div><div class="field"><label for="sDay">Day of the month</label><input id="sDay" inputmode="numeric" min="1" max="31" value="${day}"></div></div>
+    ${ex?`<div class="field"><label class="chk"><input type="checkbox" id="sActive" ${ex.active?'checked':''}>Active</label></div>`:`<div class="field"><label for="sStart">First month</label><input id="sStart" type="month" value="${pre.startMonth||defStart}"></div>`}
+    <div class="field"><label for="sNote">Note</label><input id="sNote" autocomplete="off" placeholder="Optional" value="${esc(ex?.note||'')}"></div>
+    <p class="note">The payment is added to the Ledger on that day each month (the last day for shorter months). Each month's entry can still be edited on its own; change the amount here when it changes for good.</p>`;
+  openSheet(ex?'Edit monthly payment':'New monthly payment',html,`${ex?`<button class="btn danger" id="sDel">Remove</button>`:''}<button class="btn primary" id="sSave">${ex?'Save changes':'Schedule'}</button>`,{key:'sched:'+(id||'new'),reopen:()=>openScheduleSheet(id,pre)});
+  const setKind=k=>{kind=k;$$('#skind button').forEach(b=>b.classList.toggle('on',b.dataset.k===k));const cur=$('#sCat').value;$('#sCat').innerHTML=catOptions(k,cur);};
+  $$('#skind button').forEach(b=>b.onclick=()=>setKind(b.dataset.k));
+  $('#sSave').onclick=async()=>{
+    const cents=parseAmountInput($('#sAmt').value);if(cents==null||cents<=0){toast('Enter an amount');$('#sAmt').focus();return;}
+    const payee=$('#sPayee').value.trim();if(!payee){toast('Give it a name');$('#sPayee').focus();return;}
+    const d=Math.max(1,Math.min(31,Math.round(parseNum($('#sDay').value)||1)));const now=nowISO();
+    const sc=Object.assign(ex||{id:uid(),createdAt:now,active:true},{payee,amount:kind==='expense'?-cents:cents,categoryId:$('#sCat').value||'cat_uncat',accountId:$('#sAcc').value,day:d,note:$('#sNote').value.trim(),updatedAt:now});
+    if(ex){sc.active=$('#sActive').checked;}else{const sm=($('#sStart').value||defStart).slice(0,7);sc.startMonth=sm;sc.lastMonth=shiftMonth(sm,-1);}
+    await upsert('schedules','schedules',sc);sheetDone();await runScheduled();render();toast(ex?'Saved':`Scheduled for the ${ord(d)} of each month`);
+  };
+  if(ex)$('#sDel').onclick=async()=>{if(!await ask(`Remove the monthly ${ex.payee} payment? Entries already added stay in the Ledger.`,'Remove',true))return;S.schedules=S.schedules.filter(x=>x.id!==ex.id);await dbDeleteMany('schedules',[ex.id]);sheetDone();render();toast('Removed');};
+  if(!ex)$('#sAmt').focus();
 }
 function openDayDetail(date){
   const txns=live().filter(t=>t.date===date&&!isTransfer(t)).sort((a,b)=>(b.createdAt||'').localeCompare(a.createdAt||''));
@@ -1013,10 +1094,10 @@ function viewBudget(){
   for(const p of topCats().filter(c=>!c.income)){
     const kids=childrenOf(p.id);const pl=effectiveLimit(p.id,mk);const ps=spentFor(p.id,mk);totalL+=pl.amount;totalS+=ps;
     const pst=statusOf(ps,pl.amount);
-    html+=`<div class="bgroup"><div class="brow parent"><div class="top"><button class="name" data-act="cat-detail" data-id="${p.id}"><i class="swatch" style="background:${p.color}"></i>${catIcon(p.id)}${esc(p.name)}${pl.amount?`<small class="lft ${pst==='over'?'bad':''}">${ps>pl.amount?fmtShort(ps-pl.amount)+' over':fmtShort(pl.amount-ps)+' left'}, ${Math.round(ps/pl.amount*100)}% used</small>`:''}</button><span class="nums"><span class="${pst==='over'?'bad':pst==='warn'?'warn':''}">${fmtShort(ps)}</span><span>of</span><input inputmode="decimal" data-budget="${p.id}" value="${limitFor(p.id,mk)?(limitFor(p.id,mk)/100).toFixed(0):''}" placeholder="${pl.derived&&pl.amount?(pl.amount/100).toFixed(0):'—'}" aria-label="Limit for ${esc(p.name)}"></span></div>${limitBar(ps,pl.amount,p.color,mid?projectionFor(mk,p.id)?.projected:0)}</div>`;
+    html+=`<div class="bgroup"><div class="brow parent"><div class="top"><button class="name" data-act="cat-detail" data-id="${p.id}"><i class="swatch" style="background:${p.color}"></i>${catIcon(p.id)}${esc(p.name)}${pl.amount?`<small class="lft ${pst==='over'?'bad':''}">${ps>pl.amount?fmtShort(ps-pl.amount)+' over':fmtShort(pl.amount-ps)+' left'}, ${Math.round(ps/pl.amount*100)}% used${!pl.derived&&limitSince(p.id,mk)?', since '+monthShort(limitSince(p.id,mk)):''}</small>`:''}</button><span class="nums"><span class="${pst==='over'?'bad':pst==='warn'?'warn':''}">${fmtShort(ps)}</span><span>of</span><input inputmode="decimal" data-budget="${p.id}" value="${limitFor(p.id,mk)?(limitFor(p.id,mk)/100).toFixed(0):''}" placeholder="${pl.derived&&pl.amount?(pl.amount/100).toFixed(0):'—'}" aria-label="Limit for ${esc(p.name)}"></span></div>${limitBar(ps,pl.amount,p.color,mid?projectionFor(mk,p.id)?.projected:0)}</div>`;
     for(const c of kids){
       const l=limitFor(c.id,mk),s=leaf[c.id]||0;const st=statusOf(s,l);
-      html+=`<div class="brow child"><div class="top"><button class="name" data-act="cat-detail" data-id="${c.id}">${esc(c.name)}${l?`<small class="lft ${st==='over'?'bad':''}">${s>l?fmtShort(s-l)+' over':fmtShort(l-s)+' left'}</small>`:''}</button><span class="nums"><span class="${st==='over'?'bad':st==='warn'?'warn':''}">${fmtShort(s)}</span><span>of</span><input inputmode="decimal" data-budget="${c.id}" value="${l?(l/100).toFixed(0):''}" placeholder="—" aria-label="Limit for ${esc(c.name)}"></span></div>${limitBar(s,l,p.color,mid?projectionFor(mk,c.id)?.projected:0)}</div>`;
+      html+=`<div class="brow child"><div class="top"><button class="name" data-act="cat-detail" data-id="${c.id}">${esc(c.name)}${l?`<small class="lft ${st==='over'?'bad':''}">${s>l?fmtShort(s-l)+' over':fmtShort(l-s)+' left'}${limitSince(c.id,mk)?', since '+monthShort(limitSince(c.id,mk)):''}</small>`:''}</button><span class="nums"><span class="${st==='over'?'bad':st==='warn'?'warn':''}">${fmtShort(s)}</span><span>of</span><input inputmode="decimal" data-budget="${c.id}" value="${l?(l/100).toFixed(0):''}" placeholder="—" aria-label="Limit for ${esc(c.name)}"></span></div>${limitBar(s,l,p.color,mid?projectionFor(mk,c.id)?.projected:0)}</div>`;
     }
     if(leaf[p.id]>0&&kids.length)html+=`<div class="brow child"><div class="top"><span class="name">${esc(p.name)} (general)</span><span class="nums">${fmtShort(leaf[p.id])}</span></div></div>`;
     html+='</div>';
@@ -1027,11 +1108,10 @@ function viewBudget(){
     const rows=[p,...childrenOf(p.id)].map(c=>{let v=0;for(const t of live())if(inMonth(t,mk)&&!isTransfer(t)&&t.categoryId===c.id)v+=t.amount;return v?`<div class="brow ${c.id===p.id?'parent':'child'}"><div class="top"><span class="name">${c.id===p.id?`<i class="swatch" style="background:${p.color}"></i>`:''}${esc(c.name)}</span><span class="nums good">${fmtShort(v)}</span></div></div>`:'';}).join('');
     if(rows)incHTML+=`<div class="bgroup">${rows}</div>`;
   }
-  const prev=shiftMonth(mk,-1);const prevHas=S.budgets.some(b=>b.month===prev);
-  const copy=(!totalL&&prevHas)?`<div class="actions"><button class="btn" data-act="copy-budget">Use ${monthName(prev)}'s limits</button></div>`:'';
+  const copy='';
   const ost=statusOf(totalS,totalL);const oproj=mid&&pr.projected>totalS&&pr.projected<totalL?`<div class="proj" style="left:${(pr.projected/totalL*100).toFixed(1)}%" title="Projected"></div>`:'';
   const summary=`<div class="totals"><span>Limits ${fmtShort(totalL)}</span><span>Spent ${fmtShort(totalS)}</span><span>${totalL?`${fmtShort(Math.abs(totalL-totalS))} ${totalL>=totalS?'left':'over'}`:''}</span></div>${totalL?`<div class="track"><div class="fill ${ost}" style="width:${Math.min(100,totalS/totalL*100).toFixed(1)}%"></div>${oproj}${todayMarker(mk)}</div>`:''}${income?`<div class="totals"><span>Income so far</span><span class="good">${fmtShort(income)}</span></div>`:''}`;
-  return `${monthNav()}${summary}${copy}<div class="actions"><button class="btn" data-act="categories">Edit categories</button></div>${html}${incHTML}<p class="note" style="margin-top:14px">Type a rand amount next to a category or sub-category to set its limit for ${monthName(mk)}. A category with no limit of its own uses the sum of its sub-categories. The amber tick on a bar is where this month is heading at the current pace.</p>`;
+  return `${monthNav()}${summary}<div class="actions"><button class="btn" data-act="suggest-limits">Suggest limits from history</button><button class="btn" data-act="categories">Edit categories</button></div>${html}${incHTML}<p class="note" style="margin-top:14px">Type a rand amount next to a category or sub-category to set its limit. A limit stays in force every month until you change it; clear the box to remove it from ${monthName(mk)} onward. A category with no limit of its own uses the sum of its sub-categories. The amber tick on a bar is where this month is heading at the current pace.</p>`;
 }
 
 /* ================= Fuel ================= */
@@ -1152,7 +1232,7 @@ function viewMore(){
   return `<div class="pagehead"><h2>More</h2></div>
   <div class="section"><h3>Accounts</h3>${accts||'<p class="note">No accounts yet.</p>'}<div class="actions"><button class="btn" data-act="add-account">Add account</button></div></div>
   <div class="section"><h3>Bank statements</h3><p class="note">Export a statement as CSV from your bank and import it here. Rows already imported are skipped, and entries you typed in by hand are matched rather than duplicated.</p><div class="actions"><button class="btn primary" data-act="import" ${S.accounts.length?'':'disabled'}>Import statement</button></div>${batches}</div>
-  <div class="section"><h3>Categories and rules</h3><div class="actions"><button class="btn" data-act="categories">Categories</button><button class="btn" data-act="rules">Rules${S.rules.length?` (${S.rules.length})`:''}</button><button class="btn" data-act="recurring">Recurring payments${recurringPayees().length?` (${recurringPayees().length})`:''}</button></div></div>
+  <div class="section"><h3>Categories and rules</h3><div class="actions"><button class="btn" data-act="categories">Categories</button><button class="btn" data-act="rules">Rules${S.rules.length?` (${S.rules.length})`:''}</button><button class="btn" data-act="recurring">Monthly payments${S.schedules.filter(x=>x.active).length?` (${S.schedules.filter(x=>x.active).length})`:''}</button></div></div>
   <div class="section"><h3>Home screen</h3><p class="note">Reorder or hide the dashboard sections.</p><div class="actions"><button class="btn" data-act="layout">Home layout</button></div></div>
   <div class="section"><h3>Back up</h3>${backupNote}<p class="note">Everything on this phone in one file. Restoring replaces what's here with the file's contents.</p><div class="actions"><button class="btn primary" data-act="export" ${txCount?'':'disabled'}>Export backup</button><button class="btn" data-act="restore">Restore from file</button><input id="restoreFile" type="file" accept=".json,application/json" hidden></div></div>
   <div class="section"><h3>Recently deleted</h3><div class="actions"><button class="btn" data-act="deleted" ${deleted?'':'disabled'}>${deleted?`${deleted} transaction${deleted===1?'':'s'}`:'Nothing deleted'}</button></div></div>
@@ -1183,6 +1263,8 @@ const ACTIONS={
   'review-all':async()=>{const list=live().filter(t=>t.source==='import'&&!t.reviewed);for(const t of list){t.reviewed=true;t.updatedAt=nowISO();}await upsertTxns(list);S.filterReview=false;render();toast(`${list.length} marked as reviewed`);},
   'set-meta':async el=>{await setMeta(da(el,'key'),da(el,'val'));render();},
   'recurring':()=>openRecurringSheet(),
+  'schedule':el=>openScheduleSheet(da(el,'id')),
+  'schedule-new':()=>openScheduleSheet(),
   'layout':()=>openLayoutSheet(),
   'month':el=>{S.month=shiftMonth(S.month,Number(da(el,'d')));render();},
   'month-now':()=>{S.month=monthKey(new Date());render();},
@@ -1192,7 +1274,10 @@ const ACTIONS={
   'edit-account':el=>openAccountSheet(da(el,'id')),
   'cat-detail':el=>openCatDetail(da(el,'id')),
   'edit-category':el=>openCategorySheet(da(el,'id')),
-  'copy-budget':async()=>{const prev=shiftMonth(S.month,-1);const list=S.budgets.filter(b=>b.month===prev).map(b=>({id:b.categoryId+'|'+S.month,categoryId:b.categoryId,month:S.month,amount:b.amount}));S.budgets=S.budgets.filter(b=>b.month!==S.month).concat(list);await dbPutMany('budgets',list);render();toast('Limits copied');},
+  'suggest-limits':async()=>{const mk=S.month;const targets=[];for(const p of topCats().filter(c=>!c.income)){const kids=childrenOf(p.id);for(const c of (kids.length?kids:[p])){if(limitFor(c.id,mk))continue;const a=avgPrev3(c.id,mk);if(a>=5000)targets.push({c,amount:Math.ceil(a/10000)*10000});}}
+    if(!targets.length){toast('Nothing to suggest yet: it needs a few months of history for categories without a limit');return;}
+    if(!await ask(`Set limits for ${targets.length} categor${targets.length===1?'y':'ies'} from their three-month averages, rounded up to the nearest R100? Categories that already have a limit are left alone.`,'Set limits'))return;
+    for(const t of targets)await setBudget(t.c.id,mk,t.amount);render();toast(`${targets.length} limit${targets.length===1?'':'s'} set. Adjust any of them by typing over the amount.`);},
   'import':()=>openImporter(),
   'undo-import':el=>rollbackImport(da(el,'id')),
   'categories':()=>openCategoriesList(),
@@ -1234,7 +1319,7 @@ function openTxnSheet(id,pre){
   let fromId=defaultAcc,toId=S.accounts.find(a=>a.id!==defaultAcc)?.id||defaultAcc;
   if(ex&&counterpart){if(ex.amount<0){fromId=ex.accountId;toId=counterpart.accountId;}else{fromId=counterpart.accountId;toId=ex.accountId;}}
   const amt=ex?(Math.abs(ex.amount)/100).toFixed(2).replace('.',','):(pre.amount?(pre.amount/100).toFixed(2).replace('.',','):'');
-  const src=ex?.source||'';
+  const src=ex?.source||'';const sched=ex&&ex.scheduleId?S.schedules.find(x=>x.id===ex.scheduleId):null;
   const html=`
     <div class="seg" id="kind">${['expense','income','transfer'].map(k=>`<button type="button" data-k="${k}" class="${k===kind?'on':''}">${k[0].toUpperCase()+k.slice(1)}</button>`).join('')}</div>
     <div class="field"><label for="fAmt">Amount</label><input id="fAmt" class="big" inputmode="decimal" autocomplete="off" placeholder="0,00" value="${amt}"></div>
@@ -1243,6 +1328,7 @@ function openTxnSheet(id,pre){
     <div class="field" data-kind="expense income"><label for="fAcc">Account</label><select id="fAcc">${accOptions(defaultAcc)}</select></div>
     <div class="row2" data-kind="transfer"><div class="field"><label for="fFrom">From</label><select id="fFrom">${accOptions(fromId)}</select></div><div class="field"><label for="fTo">To</label><select id="fTo">${accOptions(toId)}</select></div></div>
     <div class="row2"><div class="field"><label for="fDate">Date</label><input id="fDate" type="date" value="${ex?.date||pre.date||todayStr()}"></div><div class="field"><label for="fNote">Note</label><input id="fNote" autocomplete="off" placeholder="Optional" value="${esc(ex?.note||'')}"></div></div>
+    <div class="field" data-kind="expense income"><label class="chk"><input type="checkbox" id="fRepeat" ${sched&&sched.active?'checked':''}>Repeats every month on the <b id="fRepDay">${ord(Number((ex?.date||pre.date||todayStr()).slice(8)))}</b></label>${sched?`<span class="note">Scheduled at ${fmt(Math.abs(sched.amount))}${sched.active?'':', currently stopped'}. If you change the amount here you'll be asked whether the schedule should change too.</span>`:''}</div>
     ${src==='import'?`<div class="field"><label class="chk"><input type="checkbox" id="fRev" ${ex.reviewed?'checked':''}>Reviewed</label>${ex.bankDescription?`<span class="note">On the statement: ${esc(ex.bankDescription)}</span>`:''}</div>`:''}`;
   const foot=`${ex?`<button class="btn danger" id="fDel">Delete</button>`:`<button class="btn" id="fMore" title="Save and start another">Add another</button>`}<button class="btn primary" id="fSave">${ex?'Save changes':'Add'}</button>`;
   openSheet(ex?'Edit transaction':'Add transaction',html,foot,{key:'txn:'+(id||'new'),reopen:()=>openTxnSheet(id,pre)});
@@ -1265,6 +1351,7 @@ function openTxnSheet(id,pre){
     const last=lastCategoryForPayee($('#fPayee').value);
     if(has(last))sel.value=last;
   };
+  $('#fDate').onchange=()=>{const d=Number(($('#fDate').value||todayStr()).slice(8));if(d)$('#fRepDay').textContent=ord(d);};
   $$('[data-payee]',sheet).forEach(b=>b.onclick=()=>{const inp=$('#fPayee');inp.value=da(b,'payee');inp.dispatchEvent(new Event('input',{bubbles:true}));$('#fAmt').focus();});
   $('#fSave').onclick=()=>saveTxnForm(ex,counterpart,()=>kind,pre,false);
   const more=$('#fMore');if(more)more.onclick=()=>saveTxnForm(ex,counterpart,()=>kind,pre,true);
@@ -1290,7 +1377,15 @@ async function saveTxnForm(ex,counterpart,getKind,pre,another){
     const t=Object.assign(base,{accountId,date,amount:kind==='expense'?-cents:cents,payee,categoryId,note,updatedAt:now});
     if(t.transferId){delete t.transferId;if(counterpart){counterpart.deletedAt=now;await upsertTxns([counterpart]);}}
     const rev=$('#fRev');if(rev)t.reviewed=rev.checked;
+    const rep=$('#fRepeat');const wantRepeat=!!(rep&&rep.checked);let sched=t.scheduleId?S.schedules.find(x=>x.id===t.scheduleId):null;let newSched=false;
+    if(wantRepeat&&!sched){sched={id:uid(),payee,amount:t.amount,categoryId,accountId,day:Number(date.slice(8)),startMonth:date.slice(0,7),lastMonth:date.slice(0,7),active:true,note,createdAt:now,updatedAt:now};S.schedules.push(sched);await dbPut('schedules',sched);t.scheduleId=sched.id;newSched=true;}
+    else if(sched){
+      if(sched.active!==wantRepeat){sched.active=wantRepeat;sched.updatedAt=now;await dbPut('schedules',sched);}
+      if(wantRepeat&&ex&&sched.amount!==t.amount&&await ask(`${payee||'This payment'} is scheduled at ${fmt(Math.abs(sched.amount))} a month. Use ${fmt(Math.abs(t.amount))} from next month too?`,'Update schedule')){sched.amount=t.amount;sched.updatedAt=now;await dbPut('schedules',sched);}
+    }
     await upsertTxns([t]);await setMeta('lastAccountId',accountId);
+    if(newSched){sheetDone();S.month=date.slice(0,7);render();toast(`Added. Repeats on the ${ord(sched.day)} of every month`);await runScheduled();return;}
+    if(sched&&sched.active)await generateScheduled();
   }
   if(another){const acc=$('#fAcc')?$('#fAcc').value:undefined;toast('Added');S.month=date.slice(0,7);render();openTxnSheet(null,{accountId:acc,date});return;}
   sheetDone();toast(ex?'Saved':'Added');
@@ -1579,7 +1674,7 @@ function openDeleted(){
 }
 
 /* ================= backup ================= */
-function backupJSON(){return JSON.stringify({app:'ledger',version:APP_VERSION,exportedAt:nowISO(),accounts:S.accounts,categories:S.categories,transactions:S.transactions,budgets:S.budgets,rules:S.rules,importBatches:S.batches,fuel:S.fuel,meta:S.meta});}
+function backupJSON(){return JSON.stringify({app:'ledger',version:APP_VERSION,exportedAt:nowISO(),accounts:S.accounts,categories:S.categories,transactions:S.transactions,budgets:S.budgets,rules:S.rules,importBatches:S.batches,fuel:S.fuel,schedules:S.schedules,meta:S.meta});}
 async function exportBackup(){
   const json=backupJSON();const name='ledger-backup-'+todayStr()+'.json';
   let shared=false;
@@ -1599,7 +1694,7 @@ async function restoreData(data,askFirst){
   if(askFirst&&!await ask(`Replace everything on this phone with the backup from ${String(data.exportedAt||'').slice(0,10)}? It holds ${n} transactions and ${(data.accounts||[]).length} accounts.`,'Restore',true))return false;
   for(const s of STORES)await dbClear(s);
   await dbPutMany('accounts',data.accounts||[]);await dbPutMany('categories',data.categories||[]);await dbPutMany('transactions',data.transactions||[]);
-  await dbPutMany('budgets',data.budgets||[]);await dbPutMany('rules',data.rules||[]);await dbPutMany('importBatches',data.importBatches||[]);await dbPutMany('fuel',data.fuel||[]);
+  await dbPutMany('budgets',data.budgets||[]);await dbPutMany('rules',data.rules||[]);await dbPutMany('importBatches',data.importBatches||[]);await dbPutMany('fuel',data.fuel||[]);await dbPutMany('schedules',data.schedules||[]);
   await dbPutMany('meta',Object.entries(data.meta||{}).map(([id,value])=>({id,value})));
   await loadAll();applyTheme();render();toast('Backup restored');return true;
 }
@@ -1612,6 +1707,8 @@ async function init(){
   await loadAll();
   applyTheme();
   render();
+  await runScheduled();
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)runScheduled();});
   try{if(navigator.storage&&navigator.storage.persist)S.persisted=await navigator.storage.persist();}catch{}
   try{if(navigator.storage&&navigator.storage.estimate){const e=await navigator.storage.estimate();S.usage=e.usage||0;}}catch{}
   if(S.tab==='more')render();
@@ -1623,7 +1720,7 @@ async function init(){
   }
 }
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;if(S.tab==='more')render();});
-window.Ledger={S,fn:{parseCSV,parseDate,parseAmount,detectTable,guessMapping,parseImportRows,runImport,rollbackImport,loadImportText,openImporter,renderPreview,upsertTxns,deleteTxn,setBudget,monthTotals,spentFor,spentTop,spentLeaf,effectiveLimit,projectionFor,insights,accountBalance,backupJSON,restoreData,applyRules,cleanPayee,render,openTxnSheet,saveTxnForm,openAccountSheet,openCategoriesList,openCategorySheet,openCatDetail,setMeta,openFuelSheet,openFuelSettings,fuelStats,consumption,consumptionSeries,drivingPace,serviceForecast,fuelCatId,topCats,childrenOf,statusOf,periodMonths,periodLabel,leafMapFor,topMapFor,totalsFor,payeesFor,openPayeeDetail,openDayDetail,ask,recurringPayees,sankeySVG,treemapSVG,netWorthSeries,homeLayout,openLayoutSheet,openRecurringSheet,switchTab,sheetBack,sheetDone,burnUpSVG,heatmapHTML,weekdayProfile,stackedBarsSVG,get SHEETS(){return SHEETS;},donutSVG,ringSVG,groupedBarsSVG,lineChartSVG,get IMP(){return IMP;},set IMP(v){IMP=v;}}};
+window.Ledger={S,fn:{parseCSV,parseDate,parseAmount,detectTable,guessMapping,parseImportRows,runImport,rollbackImport,loadImportText,openImporter,renderPreview,upsertTxns,deleteTxn,setBudget,monthTotals,spentFor,spentTop,spentLeaf,effectiveLimit,projectionFor,insights,accountBalance,backupJSON,restoreData,applyRules,cleanPayee,render,openTxnSheet,saveTxnForm,openAccountSheet,openCategoriesList,openCategorySheet,openCatDetail,setMeta,openFuelSheet,openFuelSettings,fuelStats,consumption,consumptionSeries,drivingPace,serviceForecast,fuelCatId,topCats,childrenOf,statusOf,periodMonths,periodLabel,leafMapFor,topMapFor,totalsFor,payeesFor,openPayeeDetail,openDayDetail,ask,generateScheduled,runScheduled,nextScheduledDate,openScheduleSheet,limitFor,limitSince,recurringPayees,sankeySVG,treemapSVG,netWorthSeries,homeLayout,openLayoutSheet,openRecurringSheet,switchTab,sheetBack,sheetDone,burnUpSVG,heatmapHTML,weekdayProfile,stackedBarsSVG,get SHEETS(){return SHEETS;},donutSVG,ringSVG,groupedBarsSVG,lineChartSVG,get IMP(){return IMP;},set IMP(v){IMP=v;}}};
 window.LedgerReady=init().catch(e=>{console.error(e);$('#view').innerHTML=`<p class="empty bad">Ledger couldn't open its storage: ${esc(e.message||e)}. Try a different browser, or check that private browsing is off.</p>`;});
 </script>
 </body>
