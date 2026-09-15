@@ -49,17 +49,18 @@ button{background:none;border:0;padding:0;cursor:pointer;-webkit-tap-highlight-c
 :focus-visible{outline:2px solid var(--green);outline-offset:2px}
 @media (prefers-reduced-motion: no-preference){ .fill,.bar div{transition:width .35s ease} }
 
-#app{max-width:600px;margin:0 auto;min-height:100vh;padding:calc(4px + env(safe-area-inset-top)) 16px calc(104px + env(safe-area-inset-bottom))}
+#app{max-width:600px;margin:0 auto;min-height:100vh;padding:calc(4px + env(safe-area-inset-top)) 16px calc(150px + env(safe-area-inset-bottom))}
 .pagehead{display:flex;align-items:center;justify-content:space-between;padding:12px 0 6px;position:sticky;top:0;background:var(--paper);z-index:5}
 .pagehead h2{margin:0;font-size:18px;font-weight:500}
-.monthnav{display:flex;align-items:center;justify-content:space-between;padding:6px 0 8px;position:sticky;top:0;background:var(--paper);z-index:5;margin-bottom:6px}
-.monthnav button{min-height:44px}
-.monthnav .mtitle{font-size:18px;font-weight:500;padding:6px 10px;border-radius:8px}
-.monthnav>button:first-child,.monthnav>button:last-child{width:48px;height:48px;border-radius:24px}
-.monthnav .mtitle.away{text-decoration:underline dotted var(--ink-3);text-underline-offset:4px}
-.monthnav .mtitle small{display:block;font-size:11px;color:var(--ink-3);font-weight:400;line-height:1}
-.monthnav button{width:40px;height:40px;border-radius:20px;font-size:24px;line-height:1;color:var(--ink-2)}
-.monthnav button:active{background:var(--paper-2)}
+.monthnav{display:flex;align-items:center;gap:6px;padding:6px 0 6px;position:sticky;top:0;background:var(--paper);z-index:5;margin-bottom:8px}
+.monthnav .arrow{flex:0 0 48px;width:48px;height:48px;border-radius:24px;display:flex;align-items:center;justify-content:center;color:var(--ink-2)}
+.monthnav .arrow:active{background:var(--paper-2)}
+.monthnav .arrow svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.monthnav .mtitle{flex:1 1 auto;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:48px;padding:2px 4px;border-radius:10px;white-space:nowrap;overflow:hidden}
+.monthnav .mtitle b{font-size:18px;font-weight:500;line-height:1.2;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+.monthnav .mtitle small{font-size:11px;line-height:1.3;color:var(--ink-3);font-weight:400}
+.monthnav .mtitle.away small{color:var(--margin);font-weight:500}
+.monthnav .mtitle:active{background:var(--paper-2)}
 
 .hero{padding:6px 0 18px;border-bottom:1px solid var(--rule)}
 .hero h1{font-size:clamp(23px,7.2vw,30px);line-height:1.1;font-weight:500;margin:0 0 10px;letter-spacing:-.012em}
@@ -86,10 +87,11 @@ button{background:none;border:0;padding:0;cursor:pointer;-webkit-tap-highlight-c
 .filters select{flex:1 1 40%;min-width:0}
 
 .ledger{position:relative;border-top:1px solid var(--rule)}
-.ledger::before{content:'';position:absolute;left:58px;top:0;bottom:0;width:1px;background:var(--margin);opacity:.55}
-.row{display:grid;grid-template-columns:50px 1fr auto;gap:0 14px;width:100%;padding:12px 0;min-height:52px;border-bottom:1px solid var(--rule);text-align:left;align-items:center}
+.ledger::before{content:'';position:absolute;left:66px;top:0;bottom:0;width:1px;background:var(--margin);opacity:.55}
+.row{display:grid;grid-template-columns:58px 1fr auto;gap:0 14px;width:100%;padding:12px 0;min-height:52px;border-bottom:1px solid var(--rule);text-align:left;align-items:center}
 .row:active,.item:active,.crow:active,.insight:active,.sh:active{background:var(--paper-2)}
-.row .date{font-size:12px;color:var(--ink-3);padding-top:3px;align-self:start;font-variant-numeric:tabular-nums;white-space:nowrap}
+.row .date{font-size:12px;color:var(--ink-3);padding-top:3px;align-self:start;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;line-height:1.25}
+.row .date .yr{display:block;font-size:11px;color:var(--ink-3);opacity:.8}
 .row .main{min-width:0;display:flex;flex-direction:column;gap:1px}
 .row .payee{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row .meta{font-size:12.5px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -155,8 +157,8 @@ body.sheet-open{overflow:hidden}
 .colors button.on{border-color:var(--ink)}
 
 .section{margin:26px 0 0}
-.section h3{margin:0 0 8px;font-size:17px;font-weight:600}
-.section h3 small{font-weight:400;color:var(--ink-3);font-size:13px;margin-left:8px}
+.section h3{margin:0 0 8px;font-size:17px;font-weight:600;line-height:1.3}
+.section h3 small{font-weight:400;color:var(--ink-3);font-size:13px;margin-left:8px;display:inline-block}
 .sh{display:flex;justify-content:space-between;align-items:center;width:100%;text-align:left;gap:10px}
 .sh h3{margin:0 0 8px}
 .chev{width:9px;height:9px;border-right:1.5px solid var(--ink-3);border-bottom:1.5px solid var(--ink-3);transform:rotate(-45deg);margin:0 6px 8px 0;flex:0 0 auto}
@@ -171,7 +173,7 @@ body.sheet-open{overflow:hidden}
 .heat button.today{outline:2px solid var(--margin);outline-offset:-2px}
 .heat button.future{opacity:.35}
 .chips.small .chip{padding:0 12px;font-size:13px;min-height:38px}
-.totals{display:flex;justify-content:space-between;padding:4px 0 2px;font-size:14px;color:var(--ink-2);font-variant-numeric:tabular-nums}
+.totals{display:flex;justify-content:space-between;flex-wrap:wrap;gap:4px 14px;padding:4px 0 2px;font-size:14px;color:var(--ink-2);font-variant-numeric:tabular-nums}
 
 .insight{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--rule);font-size:14px;line-height:1.45;width:100%;text-align:left}
 .insight i{flex:0 0 4px;border-radius:2px;background:var(--ink-3);align-self:stretch}
@@ -183,7 +185,9 @@ body.sheet-open{overflow:hidden}
 .chip.ok{border-color:var(--green);color:var(--green)}
 .chip.warn{border-color:var(--amber);color:var(--amber)}
 .chip.over{border-color:var(--red);color:var(--red);background:color-mix(in srgb,var(--red) 10%,transparent)}
-.chips.period{margin:2px 0 10px}
+.chips.period{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;margin:2px -16px 10px;padding:0 16px 2px}
+.chips.period::-webkit-scrollbar{display:none}
+.chips.period .chip{flex:0 0 auto}
 .chips.period .chip{padding:0 12px;font-size:13px}
 .chip.sel{background:var(--ink);color:var(--paper);border-color:var(--ink)}
 .bignum{font-size:28px;font-weight:600;letter-spacing:-.01em;margin:2px 0 0;font-variant-numeric:tabular-nums;display:flex;align-items:center}
@@ -221,7 +225,7 @@ body.sheet-open{overflow:hidden}
 .brow .name{flex-wrap:wrap}
 .brow .lft{flex-basis:100%;font-size:12px;color:var(--ink-3);font-weight:400;margin-top:1px;padding-left:18px}
 .brow.child .lft{padding-left:0}
-.hero .day{display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:14px;color:var(--ink-2)}
+.hero .day{display:flex;gap:6px 16px;flex-wrap:wrap;margin-top:10px;font-size:14px;color:var(--ink-2)}
 .hero .day b{color:var(--ink);font-variant-numeric:tabular-nums;font-weight:600}
 .center{display:flex;justify-content:center;margin:6px 0 10px}
 .donut .dl{font-size:20px;font-weight:600;fill:var(--ink);font-variant-numeric:tabular-nums}
@@ -239,14 +243,15 @@ body.sheet-open{overflow:hidden}
 .krow .sub{color:var(--ink-3);font-size:12.5px;margin-left:8px;font-weight:400}
 .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
 .tile{padding:10px 12px;border:1px solid var(--rule);border-radius:10px;min-width:0}
-.tile .v{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tile .v{font-size:clamp(16px,5.2vw,20px);font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tile .l{font-size:12.5px;color:var(--ink-2)}
 .tile .d{font-size:12px;margin-top:2px;font-variant-numeric:tabular-nums}
 
 .bgroup{margin:18px 0 0}
 .brow{padding:10px 0;border-bottom:1px solid var(--rule)}
 .brow.child{padding-left:18px}
-.brow .top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.brow .top{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.brow .top .name{flex:1 1 140px}
 .brow .name{font-weight:500;display:flex;align-items:center;min-width:0;text-align:left}
 .brow.parent .name{font-size:16px}
 .brow .nums{font-size:13px;color:var(--ink-2);display:flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums;white-space:nowrap;flex:0 0 auto}
@@ -307,7 +312,7 @@ table.prev{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
 
 <script>
 'use strict';
-const APP_VERSION='0.7.0';
+const APP_VERSION='0.7.1';
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 
@@ -693,7 +698,7 @@ function render(){
   $('#fab').dataset.act=S.tab==='fuel'?'fuel-add':'add-txn';$('#fabLabel').textContent=S.tab==='fuel'?'Fill-up':'Add';
   bindView();
 }
-function monthNav(){const isCur=S.month===todayStr().slice(0,7);return `<div class="monthnav"><button data-act="month" data-d="-1" aria-label="Previous month">‹</button><button class="mtitle ${isCur?'':'away'}" data-act="month-now" title="${isCur?'This month':'Back to this month'}">${monthLabel(S.month)}${isCur?'':'<small>tap for this month</small>'}</button><button data-act="month" data-d="1" aria-label="Next month">›</button></div>`;}
+function monthNav(){const isCur=S.month===todayStr().slice(0,7);return `<div class="monthnav"><button class="arrow" data-act="month" data-d="-1" aria-label="Previous month"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button><button class="mtitle ${isCur?'':'away'}" data-act="month-now" title="${isCur?'This month':'Back to this month'}"><b>${monthLabel(S.month)}</b><small>${isCur?'this month':'tap to return to '+monthShort(todayStr().slice(0,7))}</small></button><button class="arrow" data-act="month" data-d="1" aria-label="Next month"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button></div>`;}
 function onboardingHero(){return `<section class="hero"><h1>Start with an account</h1><p>Add the account you spend from. Then log a purchase with Add, or import a bank statement under More.</p><div class="actions"><button class="btn primary" data-act="add-account">Add account</button></div></section>`;}
 function todayMarker(mk){const today=todayStr(),cur=today.slice(0,7);const pct=mk===cur?Number(today.slice(8))/daysInMonth(mk)*100:(mk<cur?100:0);return pct>0&&pct<100?`<div class="today" style="left:${pct.toFixed(1)}%" title="Today"></div>`:'';}
 /* ---- charts (inline SVG, no libraries, work offline) ---- */
@@ -897,7 +902,7 @@ function viewHome(){
 function rowHTML(t,showDate){
   const acc=accById(t.accountId);const cls=isTransfer(t)?'tr':t.amount>0?'in':'';
   const dot=t.source==='import'&&!t.reviewed?'<i class="dot" title="Not reviewed yet"></i>':'';
-  const date=showDate==='full'?dateLabelY(t.date):showDate?dateLabel(t.date):'';
+  const date=showDate==='full'?`${dateLabel(t.date)}<span class="yr">${t.date.slice(0,4)}</span>`:showDate?dateLabel(t.date):'';
   return `<button class="row" data-act="edit-txn" data-id="${t.id}"><span class="date">${date}</span><span class="main"><span class="payee">${dot}${esc(t.payee||catName(t.categoryId))}</span><span class="meta"><i class="swatch" style="background:${colorOf(t.categoryId)};width:7px;height:7px;margin-right:6px"></i>${esc(catName(t.categoryId))}<span class="acc">${esc(acc?.name||'')}</span></span></span><span class="amt ${cls}">${fmt(t.amount)}</span></button>`;
 }
 function openCatDetail(id){
