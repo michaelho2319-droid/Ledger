@@ -316,7 +316,7 @@ table.prev{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
 
 <script>
 'use strict';
-const APP_VERSION='0.8.2';
+const APP_VERSION='0.8.3';
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 
@@ -500,23 +500,9 @@ function limitFor(catId,mk){const b=limitRecord(catId,mk);return b?b.amount:0;}
 function limitSince(catId,mk){const b=limitRecord(catId,mk);return b&&b.amount>0&&b.month<mk?b.month:null;}
 function effectiveLimit(catId,mk){const kids=childrenOf(catId);if(kids.length)return {amount:kids.reduce((s,c)=>s+limitFor(c.id,mk),0),derived:true};return {amount:limitFor(catId,mk),derived:false};}
 function totalLimit(mk){return topCats().filter(c=>!c.income).reduce((s,c)=>s+effectiveLimit(c.id,mk).amount,0);}
-// What a limit actually covers. A category's own limit covers everything in it; a limit derived from
-// sub-categories covers only those sub-categories, and the rest of the spend is reported as "without a limit".
-function limitStatusFor(catId,mk,withProjection){
-  const kids=childrenOf(catId);const all=spentFor(catId,mk);
-  if(!kids.length){const own=limitFor(catId,mk);if(!own)return {limit:0,spent:all,total:all,unlimited:all,derived:false,projected:0};const pr=withProjection?projectionFor(mk,catId):null;return {limit:own,spent:all,total:all,unlimited:0,derived:false,projected:pr?pr.projected:0};}
-  const lk=kids.filter(k=>limitFor(k.id,mk)>0);
-  if(!lk.length)return {limit:0,spent:all,total:all,unlimited:all,derived:true,projected:0};
-  const leaf=spentLeaf(mk);const spent=lk.reduce((a,k)=>a+(leaf[k.id]||0),0);
-  let projected=0;if(withProjection)for(const k of lk){const pr=projectionFor(mk,k.id);projected+=pr?pr.projected:0;}
-  return {limit:lk.reduce((a,k)=>a+limitFor(k.id,mk),0),spent,total:all,unlimited:all-spent,derived:true,projected};
-}
-function limitedTotals(mk,withProjection){
-  const out={limit:0,spent:0,unlimited:0,projected:0};
-  for(const c of topCats().filter(c=>!c.income)){const st=limitStatusFor(c.id,mk,withProjection);out.limit+=st.limit;out.spent+=st.spent;out.unlimited+=st.unlimited;out.projected+=st.projected;}
-  out.unlimited+=spentLeaf(mk).cat_uncat||0;
-  return out;
-}
+// A category's spend is everything in it, and its limit is its sub-categories' limits added up.
+function limitStatusFor(catId,mk,withProjection){const lim=effectiveLimit(catId,mk);const spent=spentFor(catId,mk);const pr=withProjection&&lim.amount?projectionFor(mk,catId):null;return {limit:lim.amount,spent,total:spent,unlimited:0,derived:lim.derived,projected:pr?pr.projected:0};}
+function limitedTotals(mk,withProjection){const t=monthTotals(mk);const pr=withProjection?projectionFor(mk):null;return {limit:t.budgeted,spent:t.spent,unlimited:0,projected:pr?pr.projected:0};}
 const ownLimitCats=mk=>cats().filter(c=>!c.system&&!isIncomeCat(c.id)&&!childrenOf(c.id).length&&limitFor(c.id,mk)>0);
 function monthTotals(mk){const spent=Object.values(spentLeaf(mk)).reduce((a,b)=>a+b,0);return {income:incomeIn(mk),spent,budgeted:totalLimit(mk)};}
 function accountBalance(a){let b=a.openingBalance||0;for(const t of live())if(t.accountId===a.id)b+=t.amount;return b;}
@@ -981,7 +967,7 @@ function openCatDetail(id){
   const prevLabel=multi?((S.period==='ytd'||S.period==='all')?'':`previous ${months.length} months`):monthShort(shiftMonth(mk,-1));
   const sPrev=prevLabel?rollupFor(leafMapFor(multi?prevPeriodMonths(months):[shiftMonth(mk,-1)]),id):0;
   const sm=spentFor(id,mk);const ls=limitStatusFor(id,mk,true);const lim={amount:ls.limit,derived:ls.derived};const pr=projectionFor(mk,id);const st=statusOf(ls.spent,ls.limit);
-  const limitLine=ls.limit?(ls.spent>ls.limit?`<span class="bad">${fmtShort(ls.spent-ls.limit)} over the ${fmtShort(ls.limit)} limit for ${monthName(mk)}${ls.derived?' in the sub-categories with limits':''}</span>`:`<span class="${st==='warn'?'warn':''}">${fmtShort(ls.limit-ls.spent)} left of the ${fmtShort(ls.limit)} limit for ${monthName(mk)}${ls.derived?' (sum of the sub-categories with limits)':''}</span>`)+(ls.derived&&ls.unlimited>0?`, plus ${fmtShort(ls.unlimited)} spent where there's no limit`:''):`No limit set for ${monthName(mk)}`;
+  const limitLine=ls.limit?(ls.spent>ls.limit?`<span class="bad">${fmtShort(ls.spent-ls.limit)} over the ${fmtShort(ls.limit)} limit for ${monthName(mk)}</span>`:`<span class="${st==='warn'?'warn':''}">${fmtShort(ls.limit-ls.spent)} left of the ${fmtShort(ls.limit)} limit for ${monthName(mk)}</span>`)+(ls.derived?' (sub-categories added up)':''):`No limit set for ${monthName(mk)}`;
   const proj=pr&&!pr.final&&pr.elapsed>=3&&sm?`<p class="note">Heading for about ${fmtShort(pr.projected)} by month end${lim.amount&&pr.projected>lim.amount?', past the limit':''}.</p>`:'';
   const head=`<div class="bignum"><i class="swatch" style="background:${color}"></i><span class="num">${fmtShort(s)}</span></div><p class="note" style="margin-top:2px">spent ${periodPhrase(mk)}${multi?`, ${fmtShort(s/months.length)} a month`:''}${prevLabel?`. ${deltaHTML(s,sPrev,prevLabel)}`:''}</p>${periodBar()}`;
   const chartMonths=multi?months.slice(-24):periodMonths(mk,6);
@@ -1122,10 +1108,7 @@ function viewBudget(){
   for(const p of topCats().filter(c=>!c.income)){
     const kids=childrenOf(p.id);const st=limitStatusFor(p.id,mk,mid);const ps=st.total;
     const pst=statusOf(st.spent,st.limit);
-    const note=st.limit?(st.derived
-      ?`${st.spent>st.limit?fmtShort(st.spent-st.limit)+' over':fmtShort(st.limit-st.spent)+' left'} in the sub-categories with limits${st.unlimited>0?`, plus ${fmtShort(st.unlimited)} where there's none`:''}`
-      :`${ps>st.limit?fmtShort(ps-st.limit)+' over':fmtShort(st.limit-ps)+' left'}, ${Math.round(ps/st.limit*100)}% used${limitSince(p.id,mk)?', since '+monthShort(limitSince(p.id,mk)):''}`)
-      :(ps?`${fmtShort(ps)} spent, no limit`:'');
+    const note=st.limit?`${ps>st.limit?fmtShort(ps-st.limit)+' over':fmtShort(st.limit-ps)+' left'}, ${Math.round(ps/st.limit*100)}% used${!st.derived&&limitSince(p.id,mk)?', since '+monthShort(limitSince(p.id,mk)):''}`:(ps?`${fmtShort(ps)} spent, no limit`:'');
     html+=`<div class="bgroup"><div class="brow parent"><div class="top"><button class="name" data-act="cat-detail" data-id="${p.id}"><i class="swatch" style="background:${p.color}"></i>${catIcon(p.id)}${esc(p.name)}${note?`<small class="lft ${pst==='over'?'bad':''}">${note}</small>`:''}</button><span class="nums"><span class="${pst==='over'?'bad':pst==='warn'?'warn':''}">${fmtShort(st.limit?st.spent:ps)}</span><span>of</span>${kids.length?`<b class="sumv" title="Sum of the sub-category limits">${st.limit?fmtShort(st.limit):'—'}</b>`:`<input inputmode="decimal" data-budget="${p.id}" value="${limitFor(p.id,mk)?(limitFor(p.id,mk)/100).toFixed(0):''}" placeholder="—" aria-label="Limit for ${esc(p.name)}">`}</span></div>${limitBar(st.spent,st.limit,p.color,mid?st.projected:0)}</div>`;
     for(const c of kids){
       const l=limitFor(c.id,mk),s=leaf[c.id]||0;const st=statusOf(s,l);
