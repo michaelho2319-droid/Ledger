@@ -316,7 +316,7 @@ table.prev{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
 
 <script>
 'use strict';
-const APP_VERSION='0.8.3';
+const APP_VERSION='0.9.0';
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 
@@ -328,7 +328,7 @@ function openDB(){
   return new Promise((resolve,reject)=>{
     const req=indexedDB.open(DB_NAME,DB_VERSION);
     req.onupgradeneeded=()=>{const d=req.result;for(const s of STORES){if(!d.objectStoreNames.contains(s))d.createObjectStore(s,{keyPath:'id'});}};
-    req.onsuccess=()=>resolve(req.result);
+    req.onsuccess=()=>{const d=req.result;d.onversionchange=()=>{try{d.close();}catch{}};resolve(d);};
     req.onerror=()=>reject(req.error);
   });
 }
@@ -1161,7 +1161,7 @@ function serviceForecast(){
 }
 function viewFuel(){
   const fs=S.meta.fuel||{};const list=fuelLive();const mk=S.month;
-  const setup=`<div class="actions"><button class="btn primary" data-act="fuel-add" ${S.accounts.length?'':'disabled'}>Log fill-up</button><button class="btn" data-act="fuel-settings">Vehicle and service</button></div>`;
+  const setup=`<div class="actions"><button class="btn primary" data-act="fuel-add" ${S.accounts.length?'':'disabled'}>Log fill-up</button><button class="btn" data-act="fuel-paste" ${S.accounts.length?'':'disabled'}>Paste fill-ups</button><button class="btn" data-act="fuel-settings">Vehicle and service</button></div>`;
   const head=`<div class="pagehead"><h2>Fuel${fs.vehicle?` <small style="color:var(--ink-3);font-size:13px">${esc(fs.vehicle)}</small>`:''}</h2><button class="btn small" data-act="fuel-settings">Vehicle</button></div>`;
   if(!list.length)return `${head}<div class="section"><h3>Fuel</h3><p class="note">Log each fill-up with the odometer reading, litres and cost. Ledger then works out how far you drive, what fuel costs you per month and per kilometre, your consumption, and when the next ${fmtKm(fs.intervalKm||15000)} service is due. Each fill-up is also a transaction in the Fuel category.${S.accounts.length?'':' Add an account first.'}</p>${setup}</div>`;
   const svc=serviceForecast();const last=list[list.length-1];
@@ -1184,6 +1184,80 @@ function viewFuel(){
   const table=`${charts}<div class="section"><h3>Spend by month<small>${pm.length>6?periodLabel(mk):'six months'}</small></h3>${periodBar()}${groupedBarsSVG(months,[{name:'Fuel',color:fcol,values:stats.map(x=>x.cost)}],{height:150})}<table class="cmp"><thead><tr><th>Month</th><th>km</th><th>Litres</th><th>R/L</th><th>Spend</th></tr></thead><tbody>${stats.filter(s=>s.n).map(s=>`<tr><td>${monthShort(s.m)}</td><td>${Math.round(s.km).toLocaleString('en-ZA')}</td><td>${fmtNum(s.litres,1)}</td><td>${s.ppl?fmtNum(s.ppl/100,2):'—'}</td><td>${fmtShort(s.cost)}</td></tr>`).join('')}</tbody></table></div>`;
   const rows=[...list].reverse().slice(0,40).map(f=>{const idx=list.indexOf(f);const prevF=idx>0?list[idx-1]:null;const km=prevF?f.odometer-prevF.odometer:null;return `<button class="item" data-act="fuel-edit" data-id="${f.id}"><span>${esc(f.station||'Fill-up')}<span class="sub">${dateLabel(f.date)}, ${fmtKm(f.odometer)}${km!=null?` (+${Math.round(km)} km)`:''}, ${fmtNum(f.litres,1)} L at ${fmtNum(f.pricePerL/100,2)}${f.full?'':', partial'}</span></span><span class="amt">${fmt(f.cost)}</span></button>`;}).join('');
   return `${head}${hero}${tiles}${setup}${table}<div class="section"><h3>Fill-ups</h3>${rows}</div>`;
+}
+function parseFuelText(text){
+  const today=todayStr();const blocks=[];let cur=null;
+  const num=v=>Number(String(v).replace(',','.'));
+  for(const raw of String(text||'').replace(/\r/g,'').split('\n')){
+    let l=raw.trim();if(!l)continue;
+    let wa=null;const pm=l.match(/^\[?(\d{1,2}[\/.]\d{1,2}[\/.]\d{2,4}),?\s+\d{1,2}:\d{2}(?::\d{2})?\]?\s*(?:-\s*)?[^:]{0,40}:\s*(.*)$/);
+    if(pm){wa=parseDate(pm[1].replace(/\./g,'/'),'dmy');l=pm[2].trim();}
+    let date=null;let dm=l.match(/(?:^|[\s,;])(\d{1,2})\s+([A-Za-z]{3,})\.?(?:\s+(\d{4}))?(?=$|[\s,;])/);
+    if(dm&&MONTHS[dm[2].slice(0,3).toLowerCase()]){const mon=MONTHS[dm[2].slice(0,3).toLowerCase()];const d=Number(dm[1]);let y=dm[3]?Number(dm[3]):Number(today.slice(0,4));let cand=y+'-'+pad(mon)+'-'+pad(d);if(!dm[3]&&cand>today){y--;cand=y+'-'+pad(mon)+'-'+pad(d);}if(d>=1&&d<=31)date=cand;}
+    else{dm=l.match(/(?:^|[\s,;])(\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4})(?=$|[\s,;])/);if(dm)date=parseDate(dm[1],'dmy');}
+    if(!date&&wa&&!cur)date=wa;
+    if(date){cur={date,km:null,extraKm:0,litres:null,price:null,cost:null,raw:[]};blocks.push(cur);}
+    if(!cur)continue;
+    cur.raw.push(l);
+    const plus=l.match(/\+\s*(\d+(?:[.,]\d+)?)\s*km/i);if(plus){cur.extraKm+=num(plus[1]);}
+    else{const km=l.match(/(?:^|[^\d.,+])(\d+(?:[.,]\d+)?)\s*km\b/i);if(km&&cur.km==null)cur.km=num(km[1]);}
+    const lt=l.match(/(\d+(?:[.,]\d+)?)\s*(?:L|l|lt|litres?|liters?)\b(?![a-z])/);if(lt&&cur.litres==null&&!/km\b/i.test(lt[0]))cur.litres=num(lt[1]);
+    for(const rm of l.matchAll(/R\s?(\d+(?:[.,]\d{1,2})?)(?![\d.,]*\s*(?:km|L\b))/g)){const v=num(rm[1]);if(!isFinite(v))continue;if(v<80){if(cur.price==null)cur.price=v;}else if(cur.cost==null)cur.cost=v;}
+  }
+  const out=[];
+  for(const b of blocks){
+    let {litres,price,cost}=b;
+    if(cost!=null&&litres==null&&price)litres=cost/price;
+    if(cost==null&&price!=null&&litres)cost=price*litres;
+    if(!litres||!cost)continue;
+    out.push({date:b.date,km:(b.km||0)+b.extraKm,adjusted:b.extraKm>0,litres:Math.round(litres*1000)/1000,cost:Math.round(cost*100),pricePerL:Math.round(cost*100/litres),raw:b.raw.join(' ')});
+  }
+  out.sort((a,b)=>a.date.localeCompare(b.date));
+  return out;
+}
+function openFuelPaste(){
+  if(!S.accounts.length){toast('Add an account first');openAccountSheet();return;}
+  const list=fuelLive();const last=list[list.length-1];
+  const stations=[...new Set(S.fuel.map(f=>f.station).filter(Boolean))];const defStation=last?.station||stations[0]||'';
+  const defAcc=accById(S.meta.lastAccountId)?S.meta.lastAccountId:S.accounts[0].id;
+  const html=`<div class="field"><label for="fpText">Fill-up notes</label><textarea id="fpText" style="min-height:150px" placeholder="15 April&#10;537.9 km&#10;R23.36&#10;27.532 L&#10;R643.15&#10;&#10;22 April&#10;505 km …"></textarea></div>
+    <p class="note">Paste as many as you like, one fill-up after another: a date line, then the distance, price per litre, litres and total in any order. Copied WhatsApp messages work as they are, and a "+42.4 km" line is added to that fill-up's distance.</p>
+    <div class="row2"><div class="field"><label for="fpSt">Station</label><input id="fpSt" list="stations" autocomplete="off" value="${esc(defStation)}" placeholder="e.g. Radiokop BP"><datalist id="stations">${stations.map(x=>`<option value="${esc(x)}">`).join('')}</datalist></div><div class="field"><label for="fpAcc">Paid from</label><select id="fpAcc">${accOptions(defAcc)}</select></div></div>
+    <div class="field"><label for="fpMode">The km figure is</label><select id="fpMode"><option value="trip">the distance driven since the previous fill-up</option><option value="odo">the odometer reading</option></select></div>
+    <div class="field" id="fpAnchorWrap"><label for="fpAnchor">Odometer at the most recent fill-up in the notes (km)</label><input id="fpAnchor" inputmode="numeric" placeholder="${last?`your latest logged fill-up reads ${last.odometer} on ${dateLabel(last.date)}`:'e.g. 84250'}"><span class="note">Earlier readings are worked back from this one. Leave it empty if you don't know it; costs and consumption still work, and you can correct the odometer later under Vehicle and service.</span></div>
+    <div id="fpPrev"></div>`;
+  openSheet('Paste fill-ups',html,`<button class="btn primary" id="fpGo" disabled>Import</button>`,{key:'fuelpaste',reopen:()=>openFuelPaste()});
+  let parsed=[];
+  const preview=()=>{
+    parsed=parseFuelText($('#fpText').value);
+    const mode=$('#fpMode').value;$('#fpAnchorWrap').hidden=mode!=='trip';
+    const anchor=parseNum($('#fpAnchor').value);
+    if(mode==='odo')for(const e of parsed)e.odometer=Math.round(e.km);
+    else if(anchor!=null&&parsed.length){let o=anchor;for(let i=parsed.length-1;i>=0;i--){parsed[i].odometer=Math.round(o);o-=parsed[i].km;}}
+    else{const prior=fuelLive().filter(f=>parsed.length&&f.date<parsed[0].date);let o=prior.length?prior[prior.length-1].odometer:0;for(const e of parsed){o+=e.km;e.odometer=Math.round(o);}}
+    for(const e of parsed){e.dup=S.fuel.some(f=>!f.deletedAt&&f.date===e.date&&Math.abs(f.cost-e.cost)<=2);}
+    const fresh=parsed.filter(e=>!e.dup);
+    const km=fresh.reduce((a,e)=>a+e.km,0),cost=fresh.reduce((a,e)=>a+e.cost,0),lit=fresh.reduce((a,e)=>a+e.litres,0);
+    $('#fpPrev').innerHTML=parsed.length?`<div class="counts"><span>Fill-ups<b>${fresh.length}</b></span><span>Already logged<b>${parsed.length-fresh.length}</b></span><span>Distance<b>${fmtKm(km)}</b></span><span>Total<b>${fmtShort(cost)}</b></span></div>
+      <table class="prev"><thead><tr><th>Date</th><th>km</th><th>Odo</th><th>L</th><th style="text-align:right">Total</th></tr></thead><tbody>${parsed.slice(0,60).map(e=>`<tr class="${e.dup?'bad':''}"><td>${dateLabel(e.date)}${e.adjusted?' +':''}</td><td>${fmtNum(e.km,1)}</td><td>${e.odometer}</td><td>${fmtNum(e.litres,2)}</td><td class="amt">${fmt(e.cost)}${e.dup?'<br><small>logged</small>':''}</td></tr>`).join('')}</tbody></table>${parsed.length>60?`<p class="note">Showing 60 of ${parsed.length}.</p>`:''}${lit?`<p class="note">${fmtNum(lit,1)} litres in all, ${km?`${fmtNum(lit/km*100,2)} L/100km overall`:''}.</p>`:''}`:($('#fpText').value.trim()?'<p class="note bad">No fill-ups recognised yet. Each needs a date, litres and either a total or a price per litre.</p>':'');
+    const go=$('#fpGo');go.disabled=!fresh.length;go.textContent=fresh.length?`Import ${fresh.length}`:'Import';
+  };
+  $('#fpText').oninput=preview;$('#fpMode').onchange=preview;$('#fpAnchor').oninput=preview;
+  $('#fpGo').onclick=async()=>{
+    const fresh=parsed.filter(e=>!e.dup);if(!fresh.length)return;
+    const station=$('#fpSt').value.trim()||'Fuel',accountId=$('#fpAcc').value,now=nowISO(),fcat=fuelCatId()||'cat_uncat';
+    const fuels=[],txns=[];let linked=0;
+    for(const e of fresh){
+      const f={id:uid(),date:e.date,odometer:e.odometer,litres:e.litres,cost:e.cost,pricePerL:e.pricePerL,station,full:true,note:e.adjusted?'distance includes a +km correction':'',createdAt:now,updatedAt:now};
+      let t=live().find(x=>x.date===e.date&&x.categoryId===fcat&&!x.fuelId&&Math.abs(x.amount+e.cost)<=2);
+      if(t){linked++;}else t={id:uid(),accountId,date:e.date,amount:-e.cost,payee:station,categoryId:fcat,note:'',source:'manual',reviewed:true,createdAt:now,updatedAt:now};
+      t.fuelId=f.id;t.updatedAt=now;f.transactionId=t.id;fuels.push(f);txns.push(t);
+    }
+    await upsertTxns(txns);S.fuel.push(...fuels);await dbPutMany('fuel',fuels);await setMeta('lastAccountId',accountId);
+    closeSheet();switchTab('fuel');S.month=fresh[fresh.length-1].date.slice(0,7);render();
+    toast(`${fuels.length} fill-ups imported${linked?`, ${linked} linked to entries already in the Ledger`:''}`);
+  };
+  setTimeout(()=>$('#fpText')?.focus(),50);
 }
 function openFuelSheet(id){
   if(!S.accounts.length){toast('Add an account first');openAccountSheet();return;}
@@ -1226,11 +1300,15 @@ function openFuelSheet(id){
 }
 function openFuelSettings(){
   const fs=S.meta.fuel||{};
+  const list=fuelLive();const last=list[list.length-1];
   const html=`<div class="field"><label for="fsVeh">Vehicle</label><input id="fsVeh" autocomplete="off" placeholder="e.g. Polo" value="${esc(fs.vehicle||'')}"></div>
     <div class="row2"><div class="field"><label for="fsLast">Last service at (km)</label><input id="fsLast" inputmode="numeric" placeholder="e.g. 75000" value="${fs.lastServiceKm??''}"></div><div class="field"><label for="fsInt">Service every (km)</label><input id="fsInt" inputmode="numeric" value="${fs.intervalKm||15000}"></div></div>
+    ${last?`<div class="field"><label for="fsOdo">Odometer at your latest fill-up, ${dateLabel(last.date)} (km)</label><input id="fsOdo" inputmode="numeric" value="${last.odometer}"><span class="note">If the fill-ups were pasted in without a real reading, put the true reading here: every fill-up is shifted by the same amount so distances stay right.</span></div>`:''}
     <p class="note">The next service is due at the last service reading plus the interval. The expected date comes from how many kilometres a day you've been driving over roughly the last three months of fill-ups.</p>`;
   openSheet('Vehicle and service',html,`<button class="btn primary" id="fsSave">Save</button>`,{key:'fuelset',reopen:()=>openFuelSettings()});
-  $('#fsSave').onclick=async()=>{const last=parseNum($('#fsLast').value);const int=parseNum($('#fsInt').value)||15000;await setMeta('fuel',{vehicle:$('#fsVeh').value.trim(),lastServiceKm:last!=null?Math.round(last):null,intervalKm:Math.round(int)});sheetDone();render();toast('Saved');};
+  $('#fsSave').onclick=async()=>{const lastKm=parseNum($('#fsLast').value);const int=parseNum($('#fsInt').value)||15000;await setMeta('fuel',{vehicle:$('#fsVeh').value.trim(),lastServiceKm:lastKm!=null?Math.round(lastKm):null,intervalKm:Math.round(int)});
+    const odoIn=$('#fsOdo');if(odoIn&&last){const v=parseNum(odoIn.value);if(v!=null&&Math.round(v)!==last.odometer){const delta=Math.round(v)-last.odometer;if(await ask(`Shift every fill-up by ${delta>0?'+':''}${delta.toLocaleString('en-ZA')} km so the latest reads ${Math.round(v).toLocaleString('en-ZA')} km?`,'Shift')){const all=S.fuel.filter(f=>!f.deletedAt);for(const f of all){f.odometer+=delta;f.updatedAt=nowISO();}await dbPutMany('fuel',all);}}}
+    sheetDone();render();toast('Saved');};
 }
 
 /* ================= More ================= */
@@ -1305,6 +1383,7 @@ const ACTIONS={
   'fuel-add':()=>openFuelSheet(),
   'fuel-edit':el=>openFuelSheet(da(el,'id')),
   'fuel-settings':()=>openFuelSettings(),
+  'fuel-paste':()=>openFuelPaste(),
   'period':el=>{const p=da(el,'p');S.period=(p==='ytd'||p==='all')?p:Number(p);const d=S.openDetail;render();if(d){if(d.type==='cat')openCatDetail(d.id);else if(d.type==='payee')openPayeeDetail(d.payee,d.catId);}},
   'payee-detail':el=>openPayeeDetail(da(el,'id'),da(el,'cat')||null),
   'show-shops':async el=>{const d=S.openDetail;await setMeta('showShops',da(el,'on')==='1');if(d&&d.type==='cat'&&S.openDetail&&S.openDetail.id===d.id)openCatDetail(d.id);},
@@ -1736,7 +1815,7 @@ async function init(){
   }
 }
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;if(S.tab==='more')render();});
-window.Ledger={S,fn:{parseCSV,parseDate,parseAmount,detectTable,guessMapping,parseImportRows,runImport,rollbackImport,loadImportText,openImporter,renderPreview,upsertTxns,deleteTxn,setBudget,monthTotals,spentFor,spentTop,spentLeaf,effectiveLimit,projectionFor,insights,accountBalance,backupJSON,restoreData,applyRules,cleanPayee,render,openTxnSheet,saveTxnForm,openAccountSheet,openCategoriesList,openCategorySheet,openCatDetail,setMeta,openFuelSheet,openFuelSettings,fuelStats,consumption,consumptionSeries,drivingPace,serviceForecast,fuelCatId,topCats,childrenOf,statusOf,periodMonths,periodLabel,leafMapFor,topMapFor,totalsFor,payeesFor,openPayeeDetail,openDayDetail,openGeneralDetail,ask,limitStatusFor,limitedTotals,generateScheduled,runScheduled,nextScheduledDate,openScheduleSheet,limitFor,limitSince,recurringPayees,sankeySVG,treemapSVG,netWorthSeries,homeLayout,openLayoutSheet,openRecurringSheet,switchTab,sheetBack,sheetDone,burnUpSVG,heatmapHTML,weekdayProfile,stackedBarsSVG,get SHEETS(){return SHEETS;},donutSVG,ringSVG,groupedBarsSVG,lineChartSVG,get IMP(){return IMP;},set IMP(v){IMP=v;}}};
+window.Ledger={S,fn:{parseCSV,parseDate,parseAmount,detectTable,guessMapping,parseImportRows,runImport,rollbackImport,loadImportText,openImporter,renderPreview,upsertTxns,deleteTxn,setBudget,monthTotals,spentFor,spentTop,spentLeaf,effectiveLimit,projectionFor,insights,accountBalance,backupJSON,restoreData,applyRules,cleanPayee,render,openTxnSheet,saveTxnForm,openAccountSheet,openCategoriesList,openCategorySheet,openCatDetail,setMeta,openFuelSheet,openFuelSettings,fuelStats,consumption,consumptionSeries,drivingPace,serviceForecast,fuelCatId,topCats,childrenOf,statusOf,periodMonths,periodLabel,leafMapFor,topMapFor,totalsFor,payeesFor,openPayeeDetail,openDayDetail,openGeneralDetail,ask,parseFuelText,openFuelPaste,limitStatusFor,limitedTotals,generateScheduled,runScheduled,nextScheduledDate,openScheduleSheet,limitFor,limitSince,recurringPayees,sankeySVG,treemapSVG,netWorthSeries,homeLayout,openLayoutSheet,openRecurringSheet,switchTab,sheetBack,sheetDone,burnUpSVG,heatmapHTML,weekdayProfile,stackedBarsSVG,get SHEETS(){return SHEETS;},donutSVG,ringSVG,groupedBarsSVG,lineChartSVG,get IMP(){return IMP;},set IMP(v){IMP=v;}}};
 window.LedgerReady=init().catch(e=>{console.error(e);$('#view').innerHTML=`<p class="empty bad">Ledger couldn't open its storage: ${esc(e.message||e)}. Try a different browser, or check that private browsing is off.</p>`;});
 </script>
 </body>
