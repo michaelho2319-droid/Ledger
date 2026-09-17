@@ -213,7 +213,14 @@ body.sheet-open{overflow:hidden}
 .chart .lab{fill:var(--ink);font-weight:500}
 .chart .tl{font-size:11.5px;fill:#fff;font-weight:600}
 .chart .tl2{font-size:10.5px;fill:#fff;opacity:.9}
-.chart [data-act]{cursor:pointer}
+.chart [data-act],.chart [data-tip]{cursor:pointer}
+.chart g.sel circle.dot{r:5.5}
+.chart rect.sel,.chart path.sel{stroke:var(--ink);stroke-width:1.5}
+#tip{position:fixed;z-index:45;transform:translate(-50%,calc(-100% - 10px));background:var(--ink);color:var(--paper);padding:7px 10px;border-radius:8px;font-size:13px;white-space:nowrap;pointer-events:none;box-shadow:0 6px 18px rgba(0,0,0,.25);max-width:calc(100vw - 24px);overflow:hidden;text-overflow:ellipsis}
+#tip::after{content:'';position:absolute;left:50%;bottom:-5px;width:10px;height:10px;background:var(--ink);transform:translateX(-50%) rotate(45deg)}
+.pagehead .opts{width:44px;height:44px;border-radius:22px;display:flex;align-items:center;justify-content:center;color:var(--ink-2);border:1px solid var(--rule-strong)}
+.pagehead .opts svg{width:22px;height:22px;fill:currentColor}
+.menu .item{min-height:56px}
 .emo{margin-right:6px;font-size:.95em}
 .rep{font-style:normal;color:var(--ink-3);margin-left:6px;font-size:13px}
 .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:9px;background:var(--paper-2);color:var(--ink-2);margin-left:6px;vertical-align:1px}
@@ -311,12 +318,13 @@ table.prev{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
   </div>
 </div>
 <div id="toast" hidden></div>
+<div id="tip" hidden role="status"></div>
 <div id="ask" hidden><div class="card" role="alertdialog" aria-modal="true"><p id="askMsg"></p><div class="actions"><button class="btn" id="askNo">Cancel</button><button class="btn primary" id="askOk">OK</button></div></div></div>
 <noscript>Ledger needs JavaScript to run.</noscript>
 
 <script>
 'use strict';
-const APP_VERSION='0.9.1';
+const APP_VERSION='0.9.2';
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 
@@ -772,7 +780,7 @@ function groupedBarsSVG(months,rows,{height=180,labels=null}={}){
   const iw=(W-padL-padR)/n;const gw=Math.min(16,Math.max(4,iw*0.34));const y=v=>padT+(H-padT-padB)*(1-v/top);
   let g='';for(let v=0;v<=top+1e-9;v+=step)g+=`<line x1="${padL}" x2="${W-padR}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="grid"/><text x="${padL-4}" y="${(y(v)+3.5).toFixed(1)}" text-anchor="end" class="ax">${fmtAxis(v)}</text>`;
   const every=n>12?3:n>8?2:1;let bars='';
-  months.forEach((m,i)=>{const cx=padL+iw*i+iw/2;const k=rows.length;rows.forEach((r,j)=>{const v=r.values[i]||0;const x=cx-(k*gw+(k-1)*3)/2+j*(gw+3);if(v>0)bars+=`<rect x="${x.toFixed(1)}" y="${y(v).toFixed(1)}" width="${gw.toFixed(1)}" height="${(y(0)-y(v)).toFixed(1)}" rx="2" style="fill:${r.color}"><title>${esc(r.name)}, ${lab(i)}: ${fmt(v)}</title></rect>`;const pj=r.projected?.[i]||0;if(pj>v)bars+=`<rect x="${x.toFixed(1)}" y="${y(pj).toFixed(1)}" width="${gw.toFixed(1)}" height="${(y(v)-y(pj)).toFixed(1)}" rx="2" fill="none" style="stroke:var(--ink-3)" stroke-dasharray="3 2"><title>Projected: ${fmt(pj)}</title></rect>`;});if(i%every===0||i===n-1)bars+=`<text x="${cx.toFixed(1)}" y="${H-6}" text-anchor="middle" class="ax">${esc(lab(i))}</text>`;});
+  months.forEach((m,i)=>{const cx=padL+iw*i+iw/2;const k=rows.length;rows.forEach((r,j)=>{const v=r.values[i]||0;const x=cx-(k*gw+(k-1)*3)/2+j*(gw+3);if(v>0)bars+=`<rect x="${x.toFixed(1)}" y="${y(v).toFixed(1)}" width="${gw.toFixed(1)}" height="${(y(0)-y(v)).toFixed(1)}" rx="2" style="fill:${r.color}" data-tip="${esc(r.name)}, ${esc(lab(i))}: ${fmt(v)}"><title>${esc(r.name)}, ${esc(lab(i))}: ${fmt(v)}</title></rect>`;const pj=r.projected?.[i]||0;if(pj>v)bars+=`<rect x="${x.toFixed(1)}" y="${y(pj).toFixed(1)}" width="${gw.toFixed(1)}" height="${(y(v)-y(pj)).toFixed(1)}" rx="2" fill="none" style="stroke:var(--ink-3)" stroke-dasharray="3 2" data-tip="Projected: ${fmt(pj)}"><title>Projected: ${fmt(pj)}</title></rect>`;});if(i===n-1||(i%every===0&&n-1-i>=every))bars+=`<text x="${cx.toFixed(1)}" y="${H-6}" text-anchor="middle" class="ax">${esc(lab(i))}</text>`;});
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">${g}${bars}</svg>`;
 }
 function stackedBarsSVG(months,series,{height=190}={}){
@@ -782,7 +790,7 @@ function stackedBarsSVG(months,series,{height=190}={}){
   const iw=(W-padL-padR)/n;const bw=Math.min(26,Math.max(6,iw*0.62));const y=v=>padT+(H-padT-padB)*(1-v/top);
   let g='';for(let v=0;v<=top+1e-9;v+=step)g+=`<line x1="${padL}" x2="${W-padR}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="grid"/><text x="${padL-4}" y="${(y(v)+3.5).toFixed(1)}" text-anchor="end" class="ax">${fmtAxis(v)}</text>`;
   const every=n>12?3:n>8?2:1;let bars='';
-  months.forEach((m,i)=>{const cx=padL+iw*i+iw/2;let acc=0;for(const sr of series){const v=Math.max(0,sr.values[i]||0);if(!v)continue;const y1=y(acc+v),y0=y(acc);bars+=`<rect x="${(cx-bw/2).toFixed(1)}" y="${y1.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0.5,y0-y1).toFixed(1)}" style="fill:${sr.color}" data-act="cat-detail" data-id="${esc(sr.id||'')}"><title>${esc(sr.name)}, ${monthShort(m)}: ${fmt(v)}</title></rect>`;acc+=v;}if(i%every===0||i===n-1)bars+=`<text x="${cx.toFixed(1)}" y="${H-6}" text-anchor="middle" class="ax">${monthShort(m)}</text>`;});
+  months.forEach((m,i)=>{const cx=padL+iw*i+iw/2;let acc=0;for(const sr of series){const v=Math.max(0,sr.values[i]||0);if(!v)continue;const y1=y(acc+v),y0=y(acc);bars+=`<rect x="${(cx-bw/2).toFixed(1)}" y="${y1.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0.5,y0-y1).toFixed(1)}" style="fill:${sr.color}" data-act="cat-detail" data-id="${esc(sr.id||'')}"><title>${esc(sr.name)}, ${monthShort(m)}: ${fmt(v)}</title></rect>`;acc+=v;}if(i===n-1||(i%every===0&&n-1-i>=every))bars+=`<text x="${cx.toFixed(1)}" y="${H-6}" text-anchor="middle" class="ax">${monthShort(m)}</text>`;});
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">${g}${bars}</svg>`;
 }
 function burnUpSVG(mk){
@@ -800,10 +808,10 @@ function burnUpSVG(mk){
   let g='';for(let v=0;v<=top+1e-9;v+=step)g+=`<line x1="${padL}" x2="${W-padR}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="grid"/><text x="${padL-4}" y="${(y(v)+3.5).toFixed(1)}" text-anchor="end" class="ax">${fmtAxis(v)}</text>`;
   const line=(arr,upto)=>{let d='';for(let i=0;i<=upto;i++)d+=(i?'L':'M')+x(i).toFixed(1)+' '+y(arr[i]).toFixed(1);return d;};
   let out='';
-  if(pcum[pdim])out+=`<path d="${line(pcum,Math.min(pdim,dim))}" fill="none" style="stroke:var(--ink-3)" stroke-width="1.6" opacity=".6"><title>${monthName(prevMk)} ended at ${fmt(pcum[pdim])}</title></path>`;
-  if(lim)out+=`<line x1="${x(0)}" y1="${y(0).toFixed(1)}" x2="${x(dim).toFixed(1)}" y2="${y(lim).toFixed(1)}" style="stroke:var(--green)" stroke-width="1.4" stroke-dasharray="5 3"><title>Even pace to the ${fmtShort(lim)} limit</title></line>`;
-  if(tday>0)out+=`<path d="${line(cum,tday)}" fill="none" style="stroke:var(--ink)" stroke-width="2.4" stroke-linejoin="round"><title>Spent so far ${fmt(cum[tday])}</title></path><circle cx="${x(tday).toFixed(1)}" cy="${y(cum[tday]).toFixed(1)}" r="3.5" style="fill:var(--ink)"/>`;
-  if(proj&&tday<dim)out+=`<line x1="${x(tday).toFixed(1)}" y1="${y(cum[tday]).toFixed(1)}" x2="${x(dim).toFixed(1)}" y2="${y(proj).toFixed(1)}" style="stroke:var(--amber)" stroke-width="2" stroke-dasharray="4 3"><title>Projected ${fmt(proj)}</title></line>`;
+  if(pcum[pdim])out+=`<path d="${line(pcum,Math.min(pdim,dim))}" fill="none" style="stroke:var(--ink-3)" stroke-width="1.6" opacity=".6" data-tip="${monthName(prevMk)} ended at ${fmt(pcum[pdim])}"><title>${monthName(prevMk)} ended at ${fmt(pcum[pdim])}</title></path>`;
+  if(lim)out+=`<line x1="${x(0)}" y1="${y(0).toFixed(1)}" x2="${x(dim).toFixed(1)}" y2="${y(lim).toFixed(1)}" style="stroke:var(--green)" stroke-width="1.4" stroke-dasharray="5 3" data-tip="Even pace to the ${fmtShort(lim)} limit"><title>Even pace to the ${fmtShort(lim)} limit</title></line>`;
+  if(tday>0)out+=`<path d="${line(cum,tday)}" fill="none" style="stroke:var(--ink)" stroke-width="2.4" stroke-linejoin="round"><title>Spent so far ${fmt(cum[tday])}</title></path><g class="pt" data-tip="Day ${tday}: ${fmt(cum[tday])} so far"><circle class="dot" cx="${x(tday).toFixed(1)}" cy="${y(cum[tday]).toFixed(1)}" r="3.5" style="fill:var(--ink)"/><circle class="hit" cx="${x(tday).toFixed(1)}" cy="${y(cum[tday]).toFixed(1)}" r="14" fill="transparent"/></g>`;
+  if(proj&&tday<dim)out+=`<line x1="${x(tday).toFixed(1)}" y1="${y(cum[tday]).toFixed(1)}" x2="${x(dim).toFixed(1)}" y2="${y(proj).toFixed(1)}" style="stroke:var(--amber)" stroke-width="2" stroke-dasharray="4 3" data-tip="Projected month end: ${fmt(proj)}"><title>Projected ${fmt(proj)}</title></line><g class="pt" data-tip="Projected month end: ${fmt(proj)}"><circle class="dot" cx="${x(dim).toFixed(1)}" cy="${y(proj).toFixed(1)}" r="3" style="fill:var(--amber)"/><circle class="hit" cx="${x(dim).toFixed(1)}" cy="${y(proj).toFixed(1)}" r="14" fill="transparent"/></g>`;
   if(tday>0&&tday<dim)out+=`<line x1="${x(tday).toFixed(1)}" x2="${x(tday).toFixed(1)}" y1="${padT}" y2="${(H-padB).toFixed(1)}" style="stroke:var(--margin)" stroke-width="1" opacity=".7"/>`;
   let lx='';for(const d of [1,8,15,22,dim])lx+=`<text x="${x(d).toFixed(1)}" y="${H-6}" text-anchor="middle" class="ax">${d}</text>`;
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">${g}${out}${lx}</svg>`;
@@ -824,7 +832,7 @@ function sankeySVG(months){
   const x1=padL+nodeW,x2=W-padR-nodeW,xm=(x1+x2)/2;
   const sOff=L.nodes.map(()=>0),tOff=R.nodes.map(()=>0);let bands='';
   L.nodes.forEach((sr,i)=>{R.nodes.forEach((t,j)=>{const f=sr.value*(t.value/total);if(f<total*0.004)return;const hs=f/sr.value*sr.h,ht=f/t.value*t.h;const ya=offL+sr.y+sOff[i],yb=offR+t.y+tOff[j];sOff[i]+=hs;tOff[j]+=ht;
-    bands+=`<path d="M${x1} ${ya.toFixed(1)} C${xm} ${ya.toFixed(1)} ${xm} ${yb.toFixed(1)} ${x2} ${yb.toFixed(1)} L${x2} ${(yb+ht).toFixed(1)} C${xm} ${(yb+ht).toFixed(1)} ${xm} ${(ya+hs).toFixed(1)} ${x1} ${(ya+hs).toFixed(1)} Z" style="fill:${t.color}" opacity=".42"${t.id?` data-act="cat-detail" data-id="${t.id}"`:''}><title>${esc(sr.name)} → ${esc(t.name)}: ${fmtShort(f)}</title></path>`;});});
+    bands+=`<path d="M${x1} ${ya.toFixed(1)} C${xm} ${ya.toFixed(1)} ${xm} ${yb.toFixed(1)} ${x2} ${yb.toFixed(1)} L${x2} ${(yb+ht).toFixed(1)} C${xm} ${(yb+ht).toFixed(1)} ${xm} ${(ya+hs).toFixed(1)} ${x1} ${(ya+hs).toFixed(1)} Z" style="fill:${t.color}" opacity=".42"${t.id?` data-act="cat-detail" data-id="${t.id}"`:` data-tip="${esc(sr.name)} → ${esc(t.name)}: ${fmtShort(f)}"`}><title>${esc(sr.name)} → ${esc(t.name)}: ${fmtShort(f)}</title></path>`;});});
   const short=nm=>nm.length>13?nm.slice(0,12)+'…':nm;
   const nodes=L.nodes.map(x=>`<rect x="${padL}" y="${(offL+x.y).toFixed(1)}" width="${nodeW}" height="${x.h.toFixed(1)}" rx="2" style="fill:${x.color}"/><text x="${padL-6}" y="${(offL+x.y+x.h/2-2).toFixed(1)}" text-anchor="end" class="ax lab">${esc(short(x.name))}</text><text x="${padL-6}" y="${(offL+x.y+x.h/2+10).toFixed(1)}" text-anchor="end" class="ax">${fmtShort(x.value)}</text>`).join('')
     +R.nodes.map(x=>`<g${x.id?` data-act="cat-detail" data-id="${x.id}"`:''}><rect x="${W-padR-nodeW}" y="${(offR+x.y).toFixed(1)}" width="${nodeW}" height="${x.h.toFixed(1)}" rx="2" style="fill:${x.color}"/><text x="${W-padR+6}" y="${(offR+x.y+x.h/2-2).toFixed(1)}" class="ax lab">${esc(short(x.name))}</text><text x="${W-padR+6}" y="${(offR+x.y+x.h/2+10).toFixed(1)}" class="ax">${fmtShort(x.value)}</text></g>`).join('');
@@ -869,13 +877,13 @@ function lineChartSVG(labels,series,{height=160,avg=null,unit='money'}={}){
   const x=i=>n===1?W/2:padL+(W-padL-padR)*i/(n-1);const y=v=>padT+(H-padT-padB)*(1-(v-bottom)/(top-bottom||1));
   const fv=unit==='money'?fmtAxis:unit==='dec2'?v=>fmtNum(v,2):unit==='dec1'?v=>fmtNum(v,1):v=>fmtNum(v,0);
   let g='';for(let v=bottom;v<=top+1e-9;v+=step)g+=`<line x1="${padL}" x2="${W-padR}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="grid"${v===0&&bottom<0?' style="stroke:var(--ink-3)"':''}/><text x="${padL-4}" y="${(y(v)+3.5).toFixed(1)}" text-anchor="end" class="ax">${fv(v)}</text>`;
-  const every=n>12?3:n>8?2:1;let lx='';labels.forEach((l,i)=>{if(i%every===0||i===n-1)lx+=`<text x="${x(i).toFixed(1)}" y="${H-6}" text-anchor="middle" class="ax">${esc(l)}</text>`;});
+  const every=n>12?3:n>8?2:1;let lx='';labels.forEach((l,i)=>{if(i===n-1||(i%every===0&&n-1-i>=every))lx+=`<text x="${x(i).toFixed(1)}" y="${H-6}" text-anchor="${i===n-1?'end':i===0?'start':'middle'}" class="ax">${esc(l)}</text>`;});
   let paths='';
   for(const sr of series){const pts=[];sr.values.forEach((v,i)=>{if(v!=null)pts.push({x:x(i),y:y(v),i,v});});if(!pts.length)continue;
     const d=pts.map((p,i)=>(i?'L':'M')+p.x.toFixed(1)+' '+p.y.toFixed(1)).join(' ');
     const area=`${d} L${pts[pts.length-1].x.toFixed(1)} ${y(0).toFixed(1)} L${pts[0].x.toFixed(1)} ${y(0).toFixed(1)} Z`;
     const last=pts[pts.length-1];
-    paths+=`<path d="${area}" style="fill:${sr.color}" opacity=".12"/><path d="${d}" fill="none" style="stroke:${sr.color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>${pts.map(p=>`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" style="fill:${sr.color}"><title>${esc(labels[p.i])}: ${fv(p.v)}</title></circle>`).join('')}<text x="${last.x.toFixed(1)}" y="${(last.y-8).toFixed(1)}" text-anchor="${last.i===n-1?'end':'middle'}" class="pv">${fv(last.v)}</text>`;}
+    paths+=`<path d="${area}" style="fill:${sr.color}" opacity=".12"/><path d="${d}" fill="none" style="stroke:${sr.color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>${pts.map(p=>`<g class="pt" data-tip="${esc(labels[p.i])}: ${fv(p.v)}"><circle class="dot" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" style="fill:${sr.color}"/><circle class="hit" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="14" fill="transparent"><title>${esc(labels[p.i])}: ${fv(p.v)}</title></circle></g>`).join('')}<text x="${last.x.toFixed(1)}" y="${(last.y-8).toFixed(1)}" text-anchor="${last.i===n-1?'end':'middle'}" class="pv">${fv(last.v)}</text>`;}
   const avgL=avg?`<line x1="${padL}" x2="${W-padR}" y1="${y(avg).toFixed(1)}" y2="${y(avg).toFixed(1)}" style="stroke:var(--ink-2)" stroke-dasharray="4 3"/><text x="${padL+4}" y="${(y(avg)-4).toFixed(1)}" text-anchor="start" class="ax">avg ${fv(avg)}</text>`:'';
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">${g}${avgL}${paths}${lx}</svg>`;
 }
@@ -1162,7 +1170,7 @@ function serviceForecast(){
 function viewFuel(){
   const fs=S.meta.fuel||{};const list=fuelLive();const mk=S.month;
   const setup=`<div class="actions"><button class="btn primary" data-act="fuel-add" ${S.accounts.length?'':'disabled'}>Log fill-up</button><button class="btn" data-act="fuel-paste" ${S.accounts.length?'':'disabled'}>Paste fill-ups</button><button class="btn" data-act="fuel-settings">Vehicle and service</button></div>`;
-  const head=`<div class="pagehead"><h2>Fuel${fs.vehicle?` <small style="color:var(--ink-3);font-size:13px">${esc(fs.vehicle)}</small>`:''}</h2><button class="btn small" data-act="fuel-settings">Vehicle</button></div>`;
+  const head=`<div class="pagehead"><h2>Fuel${fs.vehicle?` <small style="color:var(--ink-3);font-size:13px">${esc(fs.vehicle)}</small>`:''}</h2><button class="opts" data-act="fuel-menu" aria-label="Fuel options"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg></button></div>`;
   if(!list.length)return `${head}<div class="section"><h3>Fuel</h3><p class="note">Log each fill-up with the odometer reading, litres and cost. Ledger then works out how far you drive, what fuel costs you per month and per kilometre, your consumption, and when the next ${fmtKm(fs.intervalKm||15000)} service is due. Each fill-up is also a transaction in the Fuel category.${S.accounts.length?'':' Add an account first.'}</p>${setup}</div>`;
   const svc=serviceForecast();const last=list[list.length-1];
   let hero;
@@ -1183,7 +1191,7 @@ function viewFuel(){
   const charts=sec('fuelprice','Price per litre','what you paid, monthly average',lineChartSVG(months.map(monthShort),[{name:'R per litre',color:fcol,values:stats.map(x=>x.ppl?x.ppl/100:null)}],{unit:'dec2',height:140})||'<p class="note">Needs fill-ups in more than one month.</p>')+(consSeg.length>1?sec('fuelcons','Consumption','L/100km between full tanks',lineChartSVG(consSeg.map(x=>dateLabel(x.date)),[{name:'L/100km',color:fcol,values:consSeg.map(x=>x.value)}],{unit:'dec1',height:140,avg:consSeg.reduce((a,x)=>a+x.value,0)/consSeg.length})):'');
   const table=`${charts}<div class="section"><h3>Spend by month<small>${pm.length>6?periodLabel(mk):'six months'}</small></h3>${periodBar()}${groupedBarsSVG(months,[{name:'Fuel',color:fcol,values:stats.map(x=>x.cost)}],{height:150})}<table class="cmp"><thead><tr><th>Month</th><th>km</th><th>Litres</th><th>R/L</th><th>Spend</th></tr></thead><tbody>${stats.filter(s=>s.n).map(s=>`<tr><td>${monthShort(s.m)}</td><td>${Math.round(s.km).toLocaleString('en-ZA')}</td><td>${fmtNum(s.litres,1)}</td><td>${s.ppl?fmtNum(s.ppl/100,2):'—'}</td><td>${fmtShort(s.cost)}</td></tr>`).join('')}</tbody></table></div>`;
   const rows=[...list].reverse().slice(0,40).map(f=>{const idx=list.indexOf(f);const prevF=idx>0?list[idx-1]:null;const km=prevF?f.odometer-prevF.odometer:null;return `<button class="item" data-act="fuel-edit" data-id="${f.id}"><span>${esc(f.station||'Fill-up')}<span class="sub">${dateLabel(f.date)}, ${fmtKm(f.odometer)}${km!=null?` (+${Math.round(km)} km)`:''}, ${fmtNum(f.litres,1)} L at ${fmtNum(f.pricePerL/100,2)}${f.full?'':', partial'}</span></span><span class="amt">${fmt(f.cost)}</span></button>`;}).join('');
-  return `${head}${hero}${tiles}${setup}${table}<div class="section"><h3>Fill-ups</h3>${rows}</div>`;
+  return `${head}${hero}${tiles}${table}<div class="section"><h3>Fill-ups</h3>${rows}</div>`;
 }
 function parseFuelText(text){
   const today=todayStr();const blocks=[];let cur=null;
@@ -1303,6 +1311,10 @@ function openFuelSheet(id){
     toast('Fill-up deleted',{action:'Undo',onAction:async()=>{delete ex.deletedAt;for(const x of list)delete x.deletedAt;await upsert('fuel','fuel',ex);await upsertTxns(list);render();}});
   };
 }
+function openFuelMenu(){
+  const fs=S.meta.fuel||{};
+  openSheet('Fuel',`<div class="menu"><button class="item" data-act="fuel-add"><span>Log a fill-up<span class="sub">Odometer, litres and cost</span></span><span class="chev">›</span></button><button class="item" data-act="fuel-paste"><span>Paste fill-ups<span class="sub">Import notes you've kept as messages</span></span><span class="chev">›</span></button><button class="item" data-act="fuel-settings"><span>Vehicle and service<span class="sub">${fs.vehicle?esc(fs.vehicle)+', ':''}last service ${fs.lastServiceKm!=null?fmtKm(fs.lastServiceKm):'not set'}, every ${fmtKm(fs.intervalKm||15000)}</span></span><span class="chev">›</span></button></div>`,`<button class="btn" data-act="close-sheet">Close</button>`,{key:'fuelmenu',reopen:()=>openFuelMenu()});
+}
 function openFuelSettings(){
   const fs=S.meta.fuel||{};
   const list=fuelLive();const last=list[list.length-1];
@@ -1389,6 +1401,7 @@ const ACTIONS={
   'fuel-edit':el=>openFuelSheet(da(el,'id')),
   'fuel-settings':()=>openFuelSettings(),
   'fuel-paste':()=>openFuelPaste(),
+  'fuel-menu':()=>openFuelMenu(),
   'period':el=>{const p=da(el,'p');S.period=(p==='ytd'||p==='all')?p:Number(p);const d=S.openDetail;render();if(d){if(d.type==='cat')openCatDetail(d.id);else if(d.type==='payee')openPayeeDetail(d.payee,d.catId);}},
   'payee-detail':el=>openPayeeDetail(da(el,'id'),da(el,'cat')||null),
   'show-shops':async el=>{const d=S.openDetail;await setMeta('showShops',da(el,'on')==='1');if(d&&d.type==='cat'&&S.openDetail&&S.openDetail.id===d.id)openCatDetail(d.id);},
@@ -1405,7 +1418,11 @@ $('#sheet').addEventListener('click',e=>{if(e.target===$('#sheet'))closeSheet();
   head.addEventListener('touchmove',e=>{if(y0==null)return;dy=Math.max(0,e.touches[0].clientY-y0);panel.style.transform=`translateY(${dy}px)`;},{passive:true});
   head.addEventListener('touchend',()=>{if(y0==null)return;panel.style.transition='';if(dy>90){panel.style.transform='translateY(100%)';setTimeout(()=>{panel.style.transform='';closeSheet();},180);}else panel.style.transform='';y0=null;},{passive:true});})();
 document.addEventListener('keydown',e=>{if(e.key!=='Enter'||$('#sheet').hidden)return;const t=e.target;if(!t||!t.matches||!t.matches('#sheet input:not([type=file])'))return;const p=$('#sheet .foot .btn.primary');if(p&&!p.disabled){e.preventDefault();t.blur();p.click();}});
-document.addEventListener('click',e=>{if(e.target.closest('[data-act]'))return;const svg=e.target.closest&&e.target.closest('svg.chart, svg.ring');if(!svg)return;const el=e.target.closest('rect, circle, path, line');const ttl=el&&el.querySelector&&el.querySelector('title');if(ttl&&ttl.textContent)toast(ttl.textContent);});
+let tipTimer=null,tipEl=null;
+function hideTip(){const t=$('#tip');t.hidden=true;if(tipEl){tipEl.classList.remove('sel');tipEl=null;}clearTimeout(tipTimer);}
+function showTip(el,text){const t=$('#tip');if(tipEl)tipEl.classList.remove('sel');tipEl=el;el.classList.add('sel');t.textContent=text;t.hidden=false;const r=el.getBoundingClientRect();const w=t.offsetWidth||120;const half=w/2+8;t.style.left=Math.max(half,Math.min(window.innerWidth-half,r.left+r.width/2))+'px';t.style.top=Math.max(52,r.top)+'px';clearTimeout(tipTimer);tipTimer=setTimeout(hideTip,4000);}
+document.addEventListener('click',e=>{const tipped=e.target.closest&&e.target.closest('[data-tip]');if(tipped&&!e.target.closest('[data-act]')){showTip(tipped,tipped.getAttribute('data-tip'));return;}if(!$('#tip').hidden)hideTip();});
+window.addEventListener('scroll',()=>{if(!$('#tip').hidden)hideTip();},{passive:true});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#sheet').hidden)closeSheet();});
 
 /* ================= transaction sheet ================= */
@@ -1820,7 +1837,7 @@ async function init(){
   }
 }
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;if(S.tab==='more')render();});
-window.Ledger={S,fn:{parseCSV,parseDate,parseAmount,detectTable,guessMapping,parseImportRows,runImport,rollbackImport,loadImportText,openImporter,renderPreview,upsertTxns,deleteTxn,setBudget,monthTotals,spentFor,spentTop,spentLeaf,effectiveLimit,projectionFor,insights,accountBalance,backupJSON,restoreData,applyRules,cleanPayee,render,openTxnSheet,saveTxnForm,openAccountSheet,openCategoriesList,openCategorySheet,openCatDetail,setMeta,openFuelSheet,openFuelSettings,fuelStats,consumption,consumptionSeries,drivingPace,serviceForecast,fuelCatId,topCats,childrenOf,statusOf,periodMonths,periodLabel,leafMapFor,topMapFor,totalsFor,payeesFor,openPayeeDetail,openDayDetail,openGeneralDetail,ask,parseFuelText,openFuelPaste,limitStatusFor,limitedTotals,generateScheduled,runScheduled,nextScheduledDate,openScheduleSheet,limitFor,limitSince,recurringPayees,sankeySVG,treemapSVG,netWorthSeries,homeLayout,openLayoutSheet,openRecurringSheet,switchTab,sheetBack,sheetDone,burnUpSVG,heatmapHTML,weekdayProfile,stackedBarsSVG,get SHEETS(){return SHEETS;},donutSVG,ringSVG,groupedBarsSVG,lineChartSVG,get IMP(){return IMP;},set IMP(v){IMP=v;}}};
+window.Ledger={S,fn:{parseCSV,parseDate,parseAmount,detectTable,guessMapping,parseImportRows,runImport,rollbackImport,loadImportText,openImporter,renderPreview,upsertTxns,deleteTxn,setBudget,monthTotals,spentFor,spentTop,spentLeaf,effectiveLimit,projectionFor,insights,accountBalance,backupJSON,restoreData,applyRules,cleanPayee,render,openTxnSheet,saveTxnForm,openAccountSheet,openCategoriesList,openCategorySheet,openCatDetail,setMeta,openFuelSheet,openFuelSettings,fuelStats,consumption,consumptionSeries,drivingPace,serviceForecast,fuelCatId,topCats,childrenOf,statusOf,periodMonths,periodLabel,leafMapFor,topMapFor,totalsFor,payeesFor,openPayeeDetail,openDayDetail,openGeneralDetail,ask,parseFuelText,openFuelPaste,openFuelMenu,showTip,hideTip,limitStatusFor,limitedTotals,generateScheduled,runScheduled,nextScheduledDate,openScheduleSheet,limitFor,limitSince,recurringPayees,sankeySVG,treemapSVG,netWorthSeries,homeLayout,openLayoutSheet,openRecurringSheet,switchTab,sheetBack,sheetDone,burnUpSVG,heatmapHTML,weekdayProfile,stackedBarsSVG,get SHEETS(){return SHEETS;},donutSVG,ringSVG,groupedBarsSVG,lineChartSVG,get IMP(){return IMP;},set IMP(v){IMP=v;}}};
 window.LedgerReady=init().catch(e=>{console.error(e);$('#view').innerHTML=`<p class="empty bad">Ledger couldn't open its storage: ${esc(e.message||e)}. Try a different browser, or check that private browsing is off.</p>`;});
 </script>
 </body>
