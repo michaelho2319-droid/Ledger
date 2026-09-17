@@ -316,7 +316,7 @@ table.prev{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
 
 <script>
 'use strict';
-const APP_VERSION='0.9.0';
+const APP_VERSION='0.9.1';
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 
@@ -1227,10 +1227,11 @@ function openFuelPaste(){
     <div class="field" id="fpAnchorWrap"><label for="fpAnchor">Odometer at the most recent fill-up in the notes (km)</label><input id="fpAnchor" inputmode="numeric" placeholder="${last?`your latest logged fill-up reads ${last.odometer} on ${dateLabel(last.date)}`:'e.g. 84250'}"><span class="note">Earlier readings are worked back from this one. Leave it empty if you don't know it; costs and consumption still work, and you can correct the odometer later under Vehicle and service.</span></div>
     <div id="fpPrev"></div>`;
   openSheet('Paste fill-ups',html,`<button class="btn primary" id="fpGo" disabled>Import</button>`,{key:'fuelpaste',reopen:()=>openFuelPaste()});
-  let parsed=[];
+  let parsed=[],anchorTouched=false;
   const preview=()=>{
     parsed=parseFuelText($('#fpText').value);
     const mode=$('#fpMode').value;$('#fpAnchorWrap').hidden=mode!=='trip';
+    if(!anchorTouched&&parsed.length&&$('#fpAnchor').value===''){const m=S.fuel.find(f=>!f.deletedAt&&f.date===parsed[parsed.length-1].date);if(m){$('#fpAnchor').value=m.odometer;}}
     const anchor=parseNum($('#fpAnchor').value);
     if(mode==='odo')for(const e of parsed)e.odometer=Math.round(e.km);
     else if(anchor!=null&&parsed.length){let o=anchor;for(let i=parsed.length-1;i>=0;i--){parsed[i].odometer=Math.round(o);o-=parsed[i].km;}}
@@ -1242,7 +1243,7 @@ function openFuelPaste(){
       <table class="prev"><thead><tr><th>Date</th><th>km</th><th>Odo</th><th>L</th><th style="text-align:right">Total</th></tr></thead><tbody>${parsed.slice(0,60).map(e=>`<tr class="${e.dup?'bad':''}"><td>${dateLabel(e.date)}${e.adjusted?' +':''}</td><td>${fmtNum(e.km,1)}</td><td>${e.odometer}</td><td>${fmtNum(e.litres,2)}</td><td class="amt">${fmt(e.cost)}${e.dup?'<br><small>logged</small>':''}</td></tr>`).join('')}</tbody></table>${parsed.length>60?`<p class="note">Showing 60 of ${parsed.length}.</p>`:''}${lit?`<p class="note">${fmtNum(lit,1)} litres in all, ${km?`${fmtNum(lit/km*100,2)} L/100km overall`:''}.</p>`:''}`:($('#fpText').value.trim()?'<p class="note bad">No fill-ups recognised yet. Each needs a date, litres and either a total or a price per litre.</p>':'');
     const go=$('#fpGo');go.disabled=!fresh.length;go.textContent=fresh.length?`Import ${fresh.length}`:'Import';
   };
-  $('#fpText').oninput=preview;$('#fpMode').onchange=preview;$('#fpAnchor').oninput=preview;
+  $('#fpText').oninput=preview;$('#fpMode').onchange=preview;$('#fpAnchor').oninput=()=>{anchorTouched=true;preview();};
   $('#fpGo').onclick=async()=>{
     const fresh=parsed.filter(e=>!e.dup);if(!fresh.length)return;
     const station=$('#fpSt').value.trim()||'Fuel',accountId=$('#fpAcc').value,now=nowISO(),fcat=fuelCatId()||'cat_uncat';
@@ -1284,7 +1285,11 @@ function openFuelSheet(id){
     if(!cost||cost<=0){toast('Enter what you paid');$('#fuCost').focus();return;}
     price=Math.round(cost/litres);
     const date=$('#fuDate').value||todayStr(),station=$('#fuSt').value.trim(),accountId=$('#fuAcc').value,note=$('#fuNote').value.trim(),now=nowISO();
+    let shiftList=[],shiftDelta=0;
+    if(ex&&Math.round(odo)!==ex.odometer){const delta=Math.round(odo)-ex.odometer;shiftDelta=delta;const earlier=fuelLive().filter(x=>x.id!==ex.id&&(x.date<ex.date||(x.date===ex.date&&x.odometer<ex.odometer)));
+      if(earlier.length&&await ask(`Shift the ${earlier.length} earlier fill-up${earlier.length===1?'':'s'} by ${delta>0?'+':''}${delta.toLocaleString('en-ZA')} km as well, so the distances between them stay the same? Choose Cancel to change only this one.`,'Shift them too'))shiftList=earlier;}
     const f=Object.assign(ex||{id:uid(),createdAt:now},{date,odometer:Math.round(odo),litres:Math.round(litres*100)/100,cost,pricePerL:price,station,full:$('#fuFull').checked,note,updatedAt:now});
+    if(shiftList.length){for(const x of shiftList){x.odometer+=shiftDelta;x.updatedAt=now;}await dbPutMany('fuel',shiftList);}
     let t=ex?S.transactions.find(x=>x.id===ex.transactionId):null;
     if(!t){t={id:uid(),createdAt:now,source:'manual',reviewed:true,note:''};f.transactionId=t.id;}
     Object.assign(t,{accountId,date,amount:-cost,payee:station||'Fuel',categoryId:fuelCatId()||'cat_uncat',fuelId:f.id,updatedAt:now});
