@@ -134,6 +134,10 @@ body.sheet-open{overflow:hidden}
 .field input[type="checkbox"]{width:20px;height:20px;accent-color:var(--green)}
 .field input[type="file"]{padding:9px 12px}
 .field input.big{height:66px;font-size:34px;font-weight:500;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.calc{border:1px solid var(--rule);border-radius:12px;padding:12px 14px;margin:12px 0 4px;display:flex;align-items:baseline;justify-content:space-between;gap:10px;background:var(--paper-2)}
+.calc .cl{font-size:13px;color:var(--ink-2)}
+.calc .cv{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.calc .cw{font-size:12.5px;color:var(--ink-3);flex-basis:100%;margin-top:2px}
 .seg{display:grid;grid-template-columns:repeat(3,1fr);border:1px solid var(--rule-strong);border-radius:8px;overflow:hidden;margin:6px 0 4px}
 .seg button{padding:12px 0;min-height:46px;color:var(--ink-2)}
 .seg button.on{background:var(--ink);color:var(--paper)}
@@ -334,7 +338,7 @@ table.prev{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
 
 <script>
 'use strict';
-const APP_VERSION='1.0.1';
+const APP_VERSION='1.2.1';
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 
@@ -383,9 +387,18 @@ const nowISO=()=>new Date().toISOString();
 const ymd=d=>d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());
 function todayStr(){return ymd(new Date());}
 function monthKey(d){return d.getFullYear()+'-'+pad(d.getMonth()+1);}
-function monthLabel(mk){const [y,m]=mk.split('-').map(Number);return new Date(y,m-1,1).toLocaleDateString('en-ZA',{month:'long',year:'numeric'});}
-function monthName(mk){const [y,m]=mk.split('-').map(Number);return new Date(y,m-1,1).toLocaleDateString('en-ZA',{month:'long'});}
-function monthShort(mk){const [y,m]=mk.split('-').map(Number);return new Date(y,m-1,1).toLocaleDateString('en-ZA',{month:'short'});}
+// A "month" in the app is a budget period. By default it is the calendar month; with a payday set it runs from that day to the day before the next one, and is named after the month it ends in.
+const periodStartDay=()=>Math.min(28,Math.max(1,Number(S.meta.periodStart)||1));
+function periodOf(date){const D=periodStartDay();const mk=date.slice(0,7);if(D===1)return mk;return Number(date.slice(8))>=D?mk:shiftMonth(mk,-1);}
+function periodStart(mk){const D=periodStartDay();return D===1?mk+'-01':mk+'-'+pad(D);}
+function periodEnd(mk){const D=periodStartDay();if(D===1)return mk+'-'+pad(daysInMonth(mk));return addDays(periodStart(shiftMonth(mk,1)),-1);}
+function periodDays(mk){return daysBetween(periodStart(mk),periodEnd(mk))+1;}
+function dayInPeriod(date){return daysBetween(periodStart(periodOf(date)),date)+1;}
+const curPeriod=()=>periodOf(todayStr());
+const nameKey=mk=>periodStartDay()===1?mk:shiftMonth(mk,1);
+function monthLabel(mk){if(periodStartDay()!==1){const e=periodEnd(mk);return `${dateLabel(periodStart(mk))} to ${dateLabel(e)} ${e.slice(0,4)}`;}const [y,m]=mk.split('-').map(Number);return new Date(y,m-1,1).toLocaleDateString('en-ZA',{month:'long',year:'numeric'});}
+function monthName(mk){const [y,m]=nameKey(mk).split('-').map(Number);return new Date(y,m-1,1).toLocaleDateString('en-ZA',{month:'long'});}
+function monthShort(mk){const [y,m]=nameKey(mk).split('-').map(Number);return new Date(y,m-1,1).toLocaleDateString('en-ZA',{month:'short'});}
 function shiftMonth(mk,delta){const [y,m]=mk.split('-').map(Number);return monthKey(new Date(y,m-1+delta,1));}
 function daysInMonth(mk){const [y,m]=mk.split('-').map(Number);return new Date(y,m,0).getDate();}
 function dateLabel(ds){const [y,m,d]=ds.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString('en-ZA',{day:'2-digit',month:'short'});}
@@ -415,7 +428,7 @@ const live=()=>S.transactions.filter(t=>!t.deletedAt);
 const catById=id=>S.categories.find(c=>c.id===id);
 const accById=id=>S.accounts.find(a=>a.id===id);
 const isTransfer=t=>t.categoryId==='cat_transfer'||!!t.transferId;
-const inMonth=(t,mk)=>t.date.startsWith(mk);
+const inMonth=(t,mk)=>periodOf(t.date)===mk;
 
 /* ================= categories ================= */
 const bySort=(a,b)=>(a.sort??0)-(b.sort??0)||a.name.localeCompare(b.name);
@@ -431,7 +444,9 @@ let DATA_VER=0;
 const isIncomeCat=id=>!!topOf(id)?.income;
 const catName=id=>catById(id)?.name||'Uncategorised';
 function fullName(id){const c=catById(id);if(!c)return 'Uncategorised';const p=c.parentId?catById(c.parentId):null;return p?`${p.name} › ${c.name}`:c.name;}
-const inCat=(t,catId)=>t.categoryId===catId||catById(t.categoryId)?.parentId===catId;
+const partsOf=t=>(t.splits&&t.splits.length)?t.splits:[{categoryId:t.categoryId,amount:t.amount}];
+const inCat=(t,catId)=>partsOf(t).some(p=>p.categoryId===catId||catById(p.categoryId)?.parentId===catId);
+function isSpendPart(t,p){if(isTransfer(t))return false;if(isIncomeCat(p.categoryId))return false;if(p.categoryId==='cat_uncat'&&p.amount>0)return false;return true;}
 function nextColor(){const used=new Set(topCats().map(c=>c.color));return PALETTE.find(c=>!used.has(c))||PALETTE[topCats().length%PALETTE.length];}
 function seedCategories(){
   const list=[];let sort=0;
@@ -508,20 +523,24 @@ async function loadAll(){
 }
 
 /* ================= money maths ================= */
-function isSpend(t){if(isTransfer(t))return false;if(isIncomeCat(t.categoryId))return false;if(t.categoryId==='cat_uncat'&&t.amount>0)return false;return true;}
-function spentLeaf(mk){const m={};for(const t of live()){if(!inMonth(t,mk)||!isSpend(t))continue;m[t.categoryId]=(m[t.categoryId]||0)-t.amount;}return m;}
+function isSpend(t){return partsOf(t).some(p=>isSpendPart(t,p));}
+const spendAmount=t=>partsOf(t).reduce((a,p)=>a+(isSpendPart(t,p)?-p.amount:0),0);
+function spentLeaf(mk){const m={};for(const t of live()){if(!inMonth(t,mk))continue;for(const p of partsOf(t)){if(!isSpendPart(t,p))continue;m[p.categoryId]=(m[p.categoryId]||0)-p.amount;}}return m;}
 function spentTop(mk){const leaf=spentLeaf(mk),m={};for(const [id,v] of Object.entries(leaf)){const t=topOf(id);const k=t?t.id:'cat_uncat';m[k]=(m[k]||0)+v;}return m;}
 function spentFor(catId,mk){const leaf=spentLeaf(mk);let v=leaf[catId]||0;for(const c of childrenOf(catId))v+=leaf[c.id]||0;return v;}
-function incomeIn(mk){let s=0;for(const t of live()){if(!inMonth(t,mk)||isTransfer(t))continue;if(isIncomeCat(t.categoryId)||(t.categoryId==='cat_uncat'&&t.amount>0))s+=t.amount;}return s;}
+function incomeIn(mk){let s=0;for(const t of live()){if(!inMonth(t,mk)||isTransfer(t))continue;for(const p of partsOf(t))if(!isSpendPart(t,p))s+=p.amount;}return s;}
 function limitRecord(catId,mk){let best=null;for(const b of S.budgets){if(b.categoryId!==catId||b.month>mk)continue;if(!best||b.month>best.month)best=b;}return best;}
 function limitFor(catId,mk){const b=limitRecord(catId,mk);return b?b.amount:0;}
 function limitSince(catId,mk){const b=limitRecord(catId,mk);return b&&b.amount>0&&b.month<mk?b.month:null;}
-function effectiveLimit(catId,mk){const kids=childrenOf(catId);if(kids.length)return {amount:kids.reduce((s,c)=>s+limitFor(c.id,mk),0),derived:true};return {amount:limitFor(catId,mk),derived:false};}
+// Carry-over: for a category marked to roll over, what was left (or overspent) in earlier periods moves into this one, YNAB-style.
+function rollFor(catId,mk){const c=catById(catId);if(!c||!c.rollover||childrenOf(catId).length)return 0;let carry=0,started=false;for(let i=12;i>=1;i--){const k=shiftMonth(mk,-i);const l=limitFor(catId,k);if(!l&&!started)continue;started=true;carry+=l-spentFor(catId,k);}return carry;}
+function availableLimit(catId,mk){const base=limitFor(catId,mk);if(!base)return {amount:0,base:0,carry:0};const carry=rollFor(catId,mk);return {amount:Math.max(0,base+carry),base,carry};}
+function effectiveLimit(catId,mk){const kids=childrenOf(catId);if(kids.length)return {amount:kids.reduce((s,c)=>s+availableLimit(c.id,mk).amount,0),derived:true,carry:kids.reduce((s,c)=>s+availableLimit(c.id,mk).carry,0)};const a=availableLimit(catId,mk);return {amount:a.amount,derived:false,carry:a.carry};}
 function totalLimit(mk){return topCats().filter(c=>!c.income).reduce((s,c)=>s+effectiveLimit(c.id,mk).amount,0);}
 // A category's spend is everything in it, and its limit is its sub-categories' limits added up.
-function limitStatusFor(catId,mk,withProjection){const lim=effectiveLimit(catId,mk);const spent=spentFor(catId,mk);const pr=withProjection&&lim.amount?projectionFor(mk,catId):null;return {limit:lim.amount,spent,total:spent,unlimited:0,derived:lim.derived,projected:pr?pr.projected:0};}
+function limitStatusFor(catId,mk,withProjection){const lim=effectiveLimit(catId,mk);const spent=spentFor(catId,mk);const pr=withProjection&&lim.amount?projectionFor(mk,catId):null;return {limit:lim.amount,spent,total:spent,unlimited:0,derived:lim.derived,carry:lim.carry||0,projected:pr?pr.projected:0};}
 function limitedTotals(mk,withProjection){const t=monthTotals(mk);const pr=withProjection?projectionFor(mk):null;return {limit:t.budgeted,spent:t.spent,unlimited:0,projected:pr?pr.projected:0};}
-const ownLimitCats=mk=>cats().filter(c=>!c.system&&!isIncomeCat(c.id)&&!childrenOf(c.id).length&&limitFor(c.id,mk)>0);
+const ownLimitCats=mk=>cats().filter(c=>!c.system&&!isIncomeCat(c.id)&&!childrenOf(c.id).length&&availableLimit(c.id,mk).amount>0);
 function monthTotals(mk){const spent=Object.values(spentLeaf(mk)).reduce((a,b)=>a+b,0);return {income:incomeIn(mk),spent,budgeted:totalLimit(mk)};}
 function accountBalance(a){let b=a.openingBalance||0;for(const t of live())if(t.accountId===a.id)b+=t.amount;return b;}
 async function setBudget(catId,mk,amount){
@@ -532,14 +551,14 @@ async function setBudget(catId,mk,amount){
   if(amount>0||earlier){const b={id,categoryId:catId,month:mk,amount:Math.max(0,amount||0)};S.budgets.push(b);await dbPut('budgets',b);}
   else await dbDeleteMany('budgets',[id]);
 }
-function spendBetween(from,to,catId){let s=0;for(const t of live()){if(t.date<from||t.date>to||!isSpend(t))continue;if(catId&&!inCat(t,catId))continue;s-=t.amount;}return s;}
+function spendBetween(from,to,catId){let s=0;for(const t of live()){if(t.date<from||t.date>to)continue;for(const p of partsOf(t)){if(!isSpendPart(t,p))continue;if(catId&&!catWithin(p.categoryId,catId))continue;s-=p.amount;}}return s;}
 function projectionFor(mk,catId){
-  const today=todayStr(),cur=today.slice(0,7);
+  const today=todayStr(),cur=curPeriod();
   const spentNow=catId?spentFor(catId,mk):monthTotals(mk).spent;
-  const dim=daysInMonth(mk);
+  const dim=periodDays(mk);
   if(mk<cur)return {projected:spentNow,final:true,elapsed:dim,dim};
   if(mk>cur)return null;
-  const d=Number(today.slice(8));const R=dim-d;const endM=mk+'-'+pad(dim);
+  const d=dayInPeriod(today);const R=dim-d;const endM=periodEnd(mk);
   // known recurring payments still due this month, plus the variable pace of the last 30 days with recurring amounts taken out
   const schedNames=new Set(S.schedules.filter(sc=>sc.active).map(sc=>normText(sc.payee)));
   const rec=recurringPayees().filter(r=>(!catId||catWithin(r.categoryId,catId))&&!schedNames.has(normText(r.payee)));
@@ -605,6 +624,7 @@ async function runScheduled(){
   const made=await generateScheduled();
   if(made.length){render();toast(`Added ${made.length===1?made[0].payee:made.length+' monthly payments'}${made.length===1?' for '+dateLabel(made[0].date):''}`,{action:'Undo',onAction:async()=>{const now=nowISO();for(const t of made)t.deletedAt=now;await upsertTxns(made);render();}});}
 }
+function mainAccount(){const counts={};for(const t of live()){if(!isSpend(t))continue;counts[t.accountId]=(counts[t.accountId]||0)+1;}const cand=S.accounts.filter(a=>a.type!=='savings'&&a.type!=='investment').sort((a,b)=>(counts[b.id]||0)-(counts[a.id]||0));return cand[0]||null;}
 function dueLabel(ds){const n=daysBetween(todayStr(),ds);return n<=0?'today':n===1?'tomorrow':`in ${n} days, ${dateLabel(ds)}`;}
 function statusOf(spent,limit){if(!limit)return 'none';if(spent>limit)return 'over';if(spent/limit>=0.85)return 'warn';return 'ok';}
 function avgPrev3(catId,mk){const vals=[1,2,3].map(i=>spentFor(catId,shiftMonth(mk,-i))).filter(v=>v>0);return vals.length?vals.reduce((a,b)=>a+b,0)/vals.length:0;}
@@ -641,7 +661,7 @@ const PERIODS=[[1,'Month'],[3,'3 months'],[6,'6 months'],[12,'12 months'],['ytd'
 function periodMonths(mk,p){
   p=p||S.period;const out=[];
   if(p==='ytd'){const y=mk.slice(0,4);for(let m=1;m<=Number(mk.slice(5));m++)out.push(y+'-'+pad(m));return out;}
-  if(p==='all'){let first=mk;for(const t of live()){const m=t.date.slice(0,7);if(m<first)first=m;}for(let m=first;m<=mk;m=shiftMonth(m,1))out.push(m);return out;}
+  if(p==='all'){let first=mk;for(const t of live()){const m=periodOf(t.date);if(m<first)first=m;}for(let m=first;m<=mk;m=shiftMonth(m,1))out.push(m);return out;}
   for(let i=p-1;i>=0;i--)out.push(shiftMonth(mk,-i));return out;
 }
 function periodLabel(mk,p){
@@ -652,7 +672,7 @@ function periodLabel(mk,p){
   const a=ms[0];return `${monthShort(a)}${a.slice(0,4)!==mk.slice(0,4)?' '+a.slice(0,4):''} to ${monthShort(mk)}`;
 }
 function periodPhrase(mk,p){
-  p=p||S.period;const cur=todayStr().slice(0,7);
+  p=p||S.period;const cur=curPeriod();
   if(p===1)return mk===cur?`so far in ${monthName(mk)}`:`in ${monthLabel(mk)}`;
   if(p==='ytd')return `so far in ${mk.slice(0,4)}`;
   if(p==='all')return 'all time';
@@ -660,14 +680,14 @@ function periodPhrase(mk,p){
 }
 function periodBar(){return `<div class="chips period">${PERIODS.map(([p,l])=>`<button class="chip ${String(S.period)===String(p)?'sel':''}" data-act="period" data-p="${p}">${l}</button>`).join('')}</div>`;}
 function prevPeriodMonths(months){const out=[];for(let i=months.length;i>=1;i--)out.push(shiftMonth(months[0],-i));return out;}
-function leafMapFor(months){const set=new Set(months);const leaf={};for(const t of live()){if(!set.has(t.date.slice(0,7))||!isSpend(t))continue;leaf[t.categoryId]=(leaf[t.categoryId]||0)-t.amount;}return leaf;}
+function leafMapFor(months){const set=new Set(months);const leaf={};for(const t of live()){if(!set.has(periodOf(t.date)))continue;for(const p of partsOf(t)){if(!isSpendPart(t,p))continue;leaf[p.categoryId]=(leaf[p.categoryId]||0)-p.amount;}}return leaf;}
 function rollupFor(leaf,catId){let v=leaf[catId]||0;for(const c of childrenOf(catId))v+=leaf[c.id]||0;return v;}
 function topMapFor(leaf){const m={};for(const [id,v] of Object.entries(leaf)){const t=topOf(id);const k=t?t.id:'cat_uncat';m[k]=(m[k]||0)+v;}return m;}
-function totalsFor(months){let income=0,spent=0;const set=new Set(months);for(const t of live()){if(!set.has(t.date.slice(0,7))||isTransfer(t))continue;if(isSpend(t))spent-=t.amount;else income+=t.amount;}return {income,spent};}
-function payeesFor(months,catId){const set=new Set(months);const m={};for(const t of live()){if(!set.has(t.date.slice(0,7))||!isSpend(t)||t.amount>=0)continue;if(catId&&!inCat(t,catId))continue;const k=t.payee||'Unknown';if(!m[k])m[k]={payee:k,amount:0,count:0};m[k].amount-=t.amount;m[k].count++;}return Object.values(m).sort((a,b)=>b.amount-a.amount);}
+function totalsFor(months){let income=0,spent=0;const set=new Set(months);for(const t of live()){if(!set.has(periodOf(t.date))||isTransfer(t))continue;for(const p of partsOf(t)){if(isSpendPart(t,p))spent-=p.amount;else income+=p.amount;}}return {income,spent};}
+function payeesFor(months,catId){const set=new Set(months);const m={};for(const t of live()){if(!set.has(periodOf(t.date)))continue;let v=0;for(const p of partsOf(t)){if(!isSpendPart(t,p)||p.amount>=0)continue;if(catId&&!catWithin(p.categoryId,catId))continue;v-=p.amount;}if(!v)continue;const k=t.payee||'Unknown';if(!m[k])m[k]={payee:k,amount:0,count:0};m[k].amount+=v;m[k].count++;}return Object.values(m).sort((a,b)=>b.amount-a.amount);}
 /* ================= insights ================= */
 function insights(mk){
-  const out=[];const tot=monthTotals(mk);const today=todayStr(),cur=today.slice(0,7);const pr=projectionFor(mk);const mn=monthName(mk);
+  const out=[];const tot=monthTotals(mk);const today=todayStr(),cur=curPeriod();const pr=projectionFor(mk);const mn=monthName(mk);
   const midMonth=pr&&!pr.final&&pr.elapsed>=3;
   const LT=midMonth?limitedTotals(mk,true):null;
   if(midMonth&&LT.limit){const diff=LT.projected-LT.limit;out.push(diff>0?{tone:'red',text:`At this pace ${mn} ends about ${fmtShort(diff)} over your limits, around ${fmtShort(LT.projected)} against ${fmtShort(LT.limit)}.`}:{tone:'green',text:`At this pace ${mn} ends about ${fmtShort(-diff)} under your limits, around ${fmtShort(LT.projected)} against ${fmtShort(LT.limit)}.`});}
@@ -675,15 +695,16 @@ function insights(mk){
   const limited=ownLimitCats(mk);
   const limitLines=[];
   for(const c of limited){
-    const l=limitFor(c.id,mk),s=spentFor(c.id,mk);
+    const l=availableLimit(c.id,mk).amount,s=spentFor(c.id,mk);
     if(s>l)limitLines.push({rank:2,over:(s-l)/l,tone:'red',text:`${c.name} is ${fmtShort(s-l)} over its ${fmtShort(l)} limit.`,id:c.id});
     else if(midMonth){const cp=projectionFor(mk,c.id);if(cp&&cp.projected>l*1.02)limitLines.push({rank:1,over:(cp.projected-l)/l,tone:'amber',text:`${c.name} is heading for about ${fmtShort(cp.projected)}, past its ${fmtShort(l)} limit.`,id:c.id});}
   }
+  if(mk===cur&&pr&&!pr.final&&(pr.upcoming||0)>0){const main=mainAccount();if(main){const bal=accountBalance(main);const due=pr.upcoming;if(bal<due)out.unshift({tone:'red',text:`${main.name} may run short before ${dateLabel(periodEnd(mk))}: ${fmtShort(due)} in bills still to go out, ${fmtShort(bal)} in it now.`});else out.push({tone:'ink',text:`${fmtShort(due)} of bills still to go out before ${dateLabel(periodEnd(mk))}; ${main.name} covers them with ${fmtShort(bal-due)} to spare.`});}}
   limitLines.sort((a,b)=>b.rank-a.rank||b.over-a.over);
   const seen=new Set();for(const l of limitLines.slice(0,3)){out.push(l);seen.add(l.id);}
   if(mk===cur&&tot.spent){
-    const d=Number(today.slice(8));const prev=shiftMonth(mk,-1);
-    const prevTo=spendBetween(prev+'-01',prev+'-'+pad(Math.min(d,daysInMonth(prev))));
+    const d=dayInPeriod(today);const prev=shiftMonth(mk,-1);
+    const prevTo=spendBetween(periodStart(prev),addDays(periodStart(prev),Math.min(d,periodDays(prev))-1));
     if(prevTo>0){const diff=tot.spent-prevTo;const pct=Math.round(Math.abs(diff)/prevTo*100);if(pct>=10)out.push({tone:diff>0?'amber':'green',text:`By day ${d} you've spent ${fmtShort(tot.spent)}, ${pct}% ${diff>0?'more':'less'} than by this day in ${monthName(prev)}.`});}
   }
   if(!pr||pr.final||pr.elapsed>=10){
@@ -764,9 +785,9 @@ function render(){
   $('#fab').dataset.act=S.tab==='fuel'?'fuel-add':'add-txn';$('#fabLabel').textContent=S.tab==='fuel'?'Fill-up':'Add';
   bindView();
 }
-function monthNav(){const isCur=S.month===todayStr().slice(0,7);return `<div class="monthnav"><button class="arrow" data-act="month" data-d="-1" aria-label="Previous month"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button><button class="mtitle ${isCur?'':'away'}" data-act="month-now" title="${isCur?'This month':'Back to this month'}"><b>${monthLabel(S.month)}</b><small>${isCur?'this month':'tap to return to '+monthShort(todayStr().slice(0,7))}</small></button><button class="arrow" data-act="month" data-d="1" aria-label="Next month"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button></div>`;}
+function monthNav(){const isCur=S.month===curPeriod();return `<div class="monthnav"><button class="arrow" data-act="month" data-d="-1" aria-label="Previous month"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg></button><button class="mtitle ${isCur?'':'away'}" data-act="month-now" title="${isCur?'This month':'Back to this month'}"><b>${monthLabel(S.month)}</b><small>${isCur?'this month':'tap to return to '+monthShort(curPeriod())}</small></button><button class="arrow" data-act="month" data-d="1" aria-label="Next month"><svg viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></svg></button></div>`;}
 function onboardingHero(){return `<section class="hero"><h1>Start with an account</h1><p>Add the account you spend from. Then log a purchase with Add, or import a bank statement under More.</p><div class="actions"><button class="btn primary" data-act="add-account">Add account</button></div></section>`;}
-function todayMarker(mk){const today=todayStr(),cur=today.slice(0,7);const pct=mk===cur?Number(today.slice(8))/daysInMonth(mk)*100:(mk<cur?100:0);return pct>0&&pct<100?`<div class="today" style="left:${pct.toFixed(1)}%" title="Today"></div>`:'';}
+function todayMarker(mk){const today=todayStr(),cur=curPeriod();const pct=mk===cur?dayInPeriod(today)/periodDays(mk)*100:(mk<cur?100:0);return pct>0&&pct<100?`<div class="today" style="left:${pct.toFixed(1)}%" title="Today"></div>`:'';}
 /* ---- charts (inline SVG, no libraries, work offline) ---- */
 const da=(el,k)=>el.getAttribute('data-'+k);
 function niceStep(max,target=4){const raw=Math.max(1,max)/target;const p=Math.pow(10,Math.floor(Math.log10(raw)));const n=raw/p;return (n<=1?1:n<=2?2:n<=5?5:10)*p;}
@@ -804,10 +825,10 @@ function stackedBarsSVG(months,series,{height=190}={}){
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">${g}${bars}</svg>`;
 }
 function burnUpSVG(mk){
-  const dim=daysInMonth(mk);const today=todayStr(),cur=today.slice(0,7);const tday=mk===cur?Number(today.slice(8)):(mk<cur?dim:0);
-  const prevMk=shiftMonth(mk,-1);const pdim=daysInMonth(prevMk);
-  const daily=new Array(dim+1).fill(0),pdaily=new Array(pdim+1).fill(0);
-  for(const t of live()){if(!isSpend(t))continue;if(t.date.startsWith(mk))daily[Number(t.date.slice(8))]-=t.amount;else if(t.date.startsWith(prevMk))pdaily[Number(t.date.slice(8))]-=t.amount;}
+  const dim=periodDays(mk);const today=todayStr(),cur=curPeriod();const tday=mk===cur?dayInPeriod(today):(mk<cur?dim:0);
+  const prevMk=shiftMonth(mk,-1);const pdim=periodDays(prevMk);const s0=periodStart(mk),ps0=periodStart(prevMk);
+  const daily=new Array(dim+2).fill(0),pdaily=new Array(pdim+2).fill(0);
+  for(const t of live()){if(!isSpend(t))continue;const pk=periodOf(t.date);if(pk===mk)daily[daysBetween(s0,t.date)+1]-=t.amount;else if(pk===prevMk)pdaily[daysBetween(ps0,t.date)+1]-=t.amount;}
   const cum=[0];for(let d=1;d<=dim;d++)cum.push(cum[d-1]+daily[d]);
   const pcum=[0];for(let d=1;d<=pdim;d++)pcum.push(pcum[d-1]+pdaily[d]);
   if(!cum[dim]&&!pcum[pdim])return '';
@@ -823,12 +844,12 @@ function burnUpSVG(mk){
   if(tday>0)out+=`<path d="${line(cum,tday)}" fill="none" style="stroke:var(--ink)" stroke-width="2.4" stroke-linejoin="round"><title>Spent so far ${fmt(cum[tday])}</title></path><g class="pt" data-tip="Day ${tday}: ${fmt(cum[tday])} so far"><circle class="dot" cx="${x(tday).toFixed(1)}" cy="${y(cum[tday]).toFixed(1)}" r="3.5" style="fill:var(--ink)"/><circle class="hit" cx="${x(tday).toFixed(1)}" cy="${y(cum[tday]).toFixed(1)}" r="14" fill="transparent"/></g>`;
   if(proj&&tday<dim)out+=`<line x1="${x(tday).toFixed(1)}" y1="${y(cum[tday]).toFixed(1)}" x2="${x(dim).toFixed(1)}" y2="${y(proj).toFixed(1)}" style="stroke:var(--amber)" stroke-width="2" stroke-dasharray="4 3" data-tip="Projected month end: ${fmt(proj)}"><title>Projected ${fmt(proj)}</title></line><g class="pt" data-tip="Projected month end: ${fmt(proj)}"><circle class="dot" cx="${x(dim).toFixed(1)}" cy="${y(proj).toFixed(1)}" r="3" style="fill:var(--amber)"/><circle class="hit" cx="${x(dim).toFixed(1)}" cy="${y(proj).toFixed(1)}" r="14" fill="transparent"/></g>`;
   if(tday>0&&tday<dim)out+=`<line x1="${x(tday).toFixed(1)}" x2="${x(tday).toFixed(1)}" y1="${padT}" y2="${(H-padB).toFixed(1)}" style="stroke:var(--margin)" stroke-width="1" opacity=".7"/>`;
-  let lx='';for(const d of [1,8,15,22,dim])lx+=`<text x="${x(d).toFixed(1)}" y="${H-6}" text-anchor="middle" class="ax">${d}</text>`;
+  let lx='';for(const d of [1,8,15,22,dim])lx+=`<text x="${x(d).toFixed(1)}" y="${H-6}" text-anchor="${d===dim?'end':d===1?'start':'middle'}" class="ax">${periodStartDay()===1?d:dateLabel(addDays(s0,d-1))}</text>`;
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">${g}${out}${lx}</svg>`;
 }
 function sankeySVG(months){
   const set=new Set(months);const inc={},spend={};
-  for(const t of live()){if(!set.has(t.date.slice(0,7))||isTransfer(t))continue;const top=topOf(t.categoryId);if(isSpend(t)){const k=top?top.id:'cat_uncat';spend[k]=(spend[k]||0)-t.amount;}else{const k=top&&top.income?top.id:'inc_other';inc[k]=(inc[k]||0)+t.amount;}}
+  for(const t of live()){if(!set.has(periodOf(t.date))||isTransfer(t))continue;for(const p of partsOf(t)){const top=topOf(p.categoryId);if(isSpendPart(t,p)){const k=top?top.id:'cat_uncat';spend[k]=(spend[k]||0)-p.amount;}else{const k=top&&top.income?top.id:'inc_other';inc[k]=(inc[k]||0)+p.amount;}}}
   const sources=Object.entries(inc).filter(([k,v])=>v>0).map(([k,v])=>({id:k==='inc_other'?'':k,name:k==='inc_other'?'Other income':catName(k),value:v,color:k==='inc_other'?NEUTRAL:colorOf(k)})).sort((a,b)=>b.value-a.value);
   const targets=Object.entries(spend).filter(([k,v])=>v>0).map(([k,v])=>({id:k,name:catName(k),value:v,color:k==='cat_uncat'?NEUTRAL:colorOf(k)})).sort((a,b)=>b.value-a.value);
   const totIn=sources.reduce((a,x)=>a+x.value,0),totOut=targets.reduce((a,x)=>a+x.value,0);
@@ -860,23 +881,23 @@ function treemapSVG(entries,{W=360,H=230}={}){
 }
 function netWorthSeries(months){
   const opening=S.accounts.reduce((a,x)=>a+(x.openingBalance||0),0);const txs=live().slice().sort((a,b)=>a.date.localeCompare(b.date));
-  return months.map(m=>{const end=m+'-'+pad(daysInMonth(m));let v=opening;for(const t of txs){if(t.date>end)break;v+=t.amount;}return v;});
+  return months.map(m=>{const end=periodEnd(m);let v=opening;for(const t of txs){if(t.date>end)break;v+=t.amount;}return v;});
 }
 function viewToggle(key,options,def){const cur=S.meta[key]||def;return `<div class="chips small">${options.map(([v,l])=>`<button class="chip ${cur===v?'sel':''}" data-act="set-meta" data-key="${key}" data-val="${v}">${l}</button>`).join('')}</div>`;}
 function heatmapHTML(mk){
-  const dim=daysInMonth(mk);const today=todayStr(),cur=today.slice(0,7);const tday=mk===cur?Number(today.slice(8)):(mk<cur?dim:0);
-  const daily=new Array(dim+1).fill(0);for(const t of live()){if(isSpend(t)&&t.date.startsWith(mk))daily[Number(t.date.slice(8))]-=t.amount;}
-  const max=Math.max(0,...daily);if(!max)return '';
-  const [yy,mm]=mk.split('-').map(Number);const offset=(new Date(yy,mm-1,1).getDay()+6)%7;
+  const n=periodDays(mk);const today=todayStr();const start=periodStart(mk);
+  const daily={};for(const t of live()){if(isSpend(t)&&periodOf(t.date)===mk)daily[t.date]=(daily[t.date]||0)-t.amount;}
+  const max=Math.max(0,...Object.values(daily));if(!max)return '';
+  const [yy,mm,dd]=start.split('-').map(Number);const offset=(new Date(yy,mm-1,dd).getDay()+6)%7;
   let cells=['Mo','Tu','We','Th','Fr','Sa','Su'].map(h=>`<div class="hd">${h}</div>`).join('');
   for(let i=0;i<offset;i++)cells+='<div></div>';
-  for(let d=1;d<=dim;d++){const v=daily[d];const lvl=v<=0?0:v>=max*0.75?4:v>=max*0.5?3:v>=max*0.25?2:1;const ds=mk+'-'+pad(d);cells+=`<button class="l${lvl}${d===tday&&mk===cur?' today':''}${d>tday?' future':''}" data-act="day-detail" data-id="${ds}" title="${fmt(v)}">${d}</button>`;}
+  for(let i=0;i<n;i++){const ds=addDays(start,i);const v=daily[ds]||0;const lvl=v<=0?0:v>=max*0.75?4:v>=max*0.5?3:v>=max*0.25?2:1;cells+=`<button class="l${lvl}${ds===today?' today':''}${ds>today?' future':''}" data-act="day-detail" data-id="${ds}" title="${fmt(v)}">${Number(ds.slice(8))}</button>`;}
   return `<div class="heat">${cells}</div>`;
 }
 function weekdayProfile(months){
   const set=new Set(months);const sums=[0,0,0,0,0,0,0],counts=[0,0,0,0,0,0,0];const today=todayStr();
-  for(const m of months){const dim=daysInMonth(m);for(let d=1;d<=dim;d++){const ds=m+'-'+pad(d);if(ds>today)break;const [y,mo,dd]=ds.split('-').map(Number);counts[(new Date(y,mo-1,dd).getDay()+6)%7]++;}}
-  for(const t of live()){if(!set.has(t.date.slice(0,7))||!isSpend(t))continue;const [y,mo,dd]=t.date.split('-').map(Number);sums[(new Date(y,mo-1,dd).getDay()+6)%7]-=t.amount;}
+  for(const m of months){const st=periodStart(m),n=periodDays(m);for(let i=0;i<n;i++){const ds=addDays(st,i);if(ds>today)break;const [y,mo,dd]=ds.split('-').map(Number);counts[(new Date(y,mo-1,dd).getDay()+6)%7]++;}}
+  for(const t of live()){if(!set.has(periodOf(t.date))||!isSpend(t))continue;const [y,mo,dd]=t.date.split('-').map(Number);sums[(new Date(y,mo-1,dd).getDay()+6)%7]-=t.amount;}
   return sums.map((v,i)=>counts[i]?Math.round(v/counts[i]):0);
 }
 
@@ -907,20 +928,20 @@ function limitBar(spent,limit,color,projected){
 /* ================= Home (dashboard) ================= */
 function viewHome(){
   if(!S.accounts.length)return `${monthNav()}${onboardingHero()}`;
-  const mk=S.month;const tot=monthTotals(mk);const pr=projectionFor(mk);const cur=todayStr().slice(0,7);
-  const dayPct=mk===cur?Number(todayStr().slice(8))/daysInMonth(mk):(mk<cur?1:0);
+  const mk=S.month;const tot=monthTotals(mk);const pr=projectionFor(mk);const cur=curPeriod();
+  const dayPct=mk===cur?dayInPeriod(todayStr())/periodDays(mk):(mk<cur?1:0);
   const mid=pr&&!pr.final&&pr.elapsed>=3;
   let hero;
   const LT=limitedTotals(mk,mid);
   if(LT.limit>0){
     const left=LT.limit-LT.spent;const pct=LT.spent/LT.limit;const st=statusOf(LT.spent,LT.limit);
     const ring=ringSVG(pct,{color:st==='over'?'var(--red)':st==='warn'?'var(--amber)':'var(--green)',projPct:mid?LT.projected/LT.limit:0,todayPct:dayPct,text:`${Math.round(pct*100)}%`});
-    const remDays=mk===cur?daysInMonth(mk)-Number(todayStr().slice(8))+1:0;const dueLeft=pr&&!pr.final?(pr.upcoming||0):0;const perDay=remDays?Math.max(0,left-dueLeft)/remDays:0;const todaySpent=mk===cur?spendBetween(todayStr(),todayStr()):0;
+    const remDays=mk===cur?periodDays(mk)-dayInPeriod(todayStr())+1:0;const dueLeft=pr&&!pr.final?(pr.upcoming||0):0;const perDay=remDays?Math.max(0,left-dueLeft)/remDays:0;const todaySpent=mk===cur?spendBetween(todayStr(),todayStr()):0;
     const dayLine=mk===cur?`<div class="day"><span><b>${fmtShort(perDay)}</b> a day for the next ${remDays} day${remDays===1?'':'s'}${dueLeft?` after ${fmtShort(dueLeft)} of known bills`:''}</span><span>Today <b>${fmtShort(todaySpent)}</b></span></div>`:'';
     hero=`<section class="hero"><div class="wrap"><div><h1><span class="num">${fmtShort(Math.abs(left))}</span> ${left>=0?'left':'over'} in ${monthName(mk)}</h1><p>Spent ${fmtShort(LT.spent)} of ${fmtShort(LT.limit)} in limits${LT.unlimited>0?`, plus ${fmtShort(LT.unlimited)} where there's no limit`:''}.${tot.income?` ${fmtShort(tot.income)} came in.`:''}${mid?` Heading for about ${fmtShort(LT.projected)} against limits.`:''}</p></div>${ring}</div>${dayLine}<div class="legend"><span><i style="background:var(--margin)"></i>Today</span>${mid&&LT.projected>LT.spent?'<span><i style="background:var(--amber);opacity:.6"></i>Projected</span>':''}</div></section>`;
   }else{
     const pct=tot.income?Math.min(100,tot.spent/tot.income*100):0;
-    const dayLine=mk===cur&&tot.spent?`<div class="day"><span><b>${fmtShort(tot.spent/Math.max(1,Number(todayStr().slice(8))))}</b> a day so far</span><span>Today <b>${fmtShort(spendBetween(todayStr(),todayStr()))}</b></span></div>`:'';
+    const dayLine=mk===cur&&tot.spent?`<div class="day"><span><b>${fmtShort(tot.spent/Math.max(1,dayInPeriod(todayStr())))}</b> a day so far</span><span>Today <b>${fmtShort(spendBetween(todayStr(),todayStr()))}</b></span></div>`:'';
     hero=`<section class="hero"><h1><span class="num">${fmtShort(tot.spent)}</span> spent in ${monthName(mk)}</h1><div class="track"><div class="fill" style="width:${pct.toFixed(1)}%"></div>${todayMarker(mk)}</div><p>${tot.income?`${fmtShort(tot.income)} in, ${fmtShort(tot.spent)} out.`:'Nothing in yet.'} ${mid&&tot.spent?`Heading for about ${fmtShort(pr.projected)}.`:''} <button data-act="tab" data-tab="budget">Set limits</button> to see what's left.</p>${dayLine}</section>`;
   }
   const ins=insights(mk);
@@ -928,7 +949,7 @@ function viewHome(){
   const burn=burnUpSVG(mk);
   const pace=burn?sec('pace','Pace',monthName(mk),`${burn}<div class="legend"><span><i style="background:var(--ink)"></i>This month</span><span><i style="background:var(--ink-3);opacity:.6"></i>${monthName(shiftMonth(mk,-1))}</span>${tot.budgeted?'<span><i class="p" style="border-color:var(--green)"></i>Limit at even pace</span>':''}${mid&&mk===cur?'<span><i class="p" style="border-color:var(--amber)"></i>Projected</span>':''}</div><p class="note">Above the dashed line means you're spending faster than the limit allows; below it, slower.</p>`):'';
   const limited=ownLimitCats(mk);
-  const chips=limited.length?sec('limits','Limits',monthName(mk),`<div class="chips">${limited.map(c=>{const l=limitFor(c.id,mk),sp=spentFor(c.id,mk);const st=statusOf(sp,l);return `<button class="chip ${st}" data-act="cat-detail" data-id="${c.id}"><i class="swatch" style="background:${colorOf(c.id)}"></i>${catIcon(c.id)}${esc(c.name)} <b>${Math.round(sp/l*100)}%</b></button>`;}).join('')}</div>`):'';
+  const chips=limited.length?sec('limits','Limits',monthName(mk),`<div class="chips">${limited.map(c=>{const l=availableLimit(c.id,mk).amount,sp=spentFor(c.id,mk);const st=statusOf(sp,l);return `<button class="chip ${st}" data-act="cat-detail" data-id="${c.id}"><i class="swatch" style="background:${colorOf(c.id)}"></i>${catIcon(c.id)}${esc(c.name)} <b>${Math.round(sp/l*100)}%</b></button>`;}).join('')}</div>`):'';
   const schedNames=new Set(S.schedules.filter(sc=>sc.active).map(sc=>normText(sc.payee)));
   const schedUp=S.schedules.filter(sc=>sc.active&&sc.amount<0).map(sc=>({id:sc.id,payee:sc.payee,categoryId:sc.categoryId,amount:-sc.amount,next:nextScheduledDate(sc),scheduled:true,interval:'monthly',fixed:true})).filter(x=>x.next);
   const rec=recurringPayees().filter(r=>!schedNames.has(normText(r.payee)));
@@ -975,7 +996,8 @@ function rowHTML(t,showDate){
   const dot=t.source==='import'&&!t.reviewed?'<i class="dot" title="Not reviewed yet"></i>':'';
   const date=showDate==='full'?`${dateLabel(t.date)}<span class="yr">${t.date.slice(0,4)}</span>`:showDate?dateLabel(t.date):'';
   const rep=t.scheduleId?'<i class="rep" title="Repeats monthly">⟳</i>':'';
-  return `<button class="row" data-act="edit-txn" data-id="${t.id}"><span class="date">${date}</span><span class="main"><span class="payee">${dot}${esc(t.payee||catName(t.categoryId))}${rep}</span><span class="meta"><i class="swatch" style="background:${colorOf(t.categoryId)};width:7px;height:7px;margin-right:6px"></i>${esc(catName(t.categoryId))}<span class="acc">${esc(acc?.name||'')}</span></span></span><span class="amt ${cls}">${fmt(t.amount)}</span></button>`;
+  const catLabel=t.splits&&t.splits.length?'Split: '+t.splits.map(x=>catName(x.categoryId)).join(', '):catName(t.categoryId);
+  return `<button class="row" data-act="edit-txn" data-id="${t.id}"><span class="date">${date}</span><span class="main"><span class="payee">${dot}${esc(t.payee||catName(t.categoryId))}${rep}</span><span class="meta"><i class="swatch" style="background:${colorOf(t.categoryId)};width:7px;height:7px;margin-right:6px"></i>${esc(catLabel)}<span class="acc">${esc(acc?.name||'')}</span></span></span><span class="amt ${cls}">${fmt(t.amount)}</span></button>`;
 }
 function openCatDetail(id){
   const c=catById(id);if(!c)return;
@@ -1004,7 +1026,7 @@ function openCatDetail(id){
   const shopsHTML=shops.length?`<div class="section"><h3>Shops<small>${shops.length}, ${periodLabel(mk)}</small></h3>${showShops
     ?`<div class="center">${donutSVG(shops.slice(0,8).map((x,i)=>({id:x.payee,cat:id,act:'payee-detail',name:x.payee,color,opacity:1-Math.min(0.66,i*0.095),value:x.amount})).concat(shops.length>8?[{id:'',act:'none',name:'Other shops',color:NEUTRAL,value:shops.slice(8).reduce((a,x)=>a+x.amount,0)}]:[]),{size:150,thick:22,label:fmtShort(stot),sub:`${shops.length} shops`})}</div>`+shops.slice(0,25).map(x=>`<button class="crow" data-act="payee-detail" data-id="${esc(x.payee)}" data-cat="${id}"><span class="cname"><span>${esc(x.payee)}</span><span class="pct">${Math.round(x.amount/stot*100)}%</span></span><span class="amt">${fmt(x.amount)}</span><span class="cdelta">${x.count} ${x.count===1?'visit':'visits'}, ${fmtShort(x.amount/x.count)} each</span></button>`).join('')+(shops.length>25?`<p class="note">Showing 25 of ${shops.length}.</p>`:'')+`<div class="actions"><button class="btn small" data-act="show-shops" data-on="0">Hide shops</button></div>`
     :`<p class="note">See exactly which shops this went to, and tap one for its history.</p><div class="actions"><button class="btn small" data-act="show-shops" data-on="1">Show shops</button></div>`}</div>`:'';
-  const txns=live().filter(t=>set.has(t.date.slice(0,7))&&inCat(t,id)&&!isTransfer(t)).sort((a,b)=>b.date.localeCompare(a.date));
+  const txns=live().filter(t=>set.has(periodOf(t.date))&&inCat(t,id)&&!isTransfer(t)).sort((a,b)=>b.date.localeCompare(a.date));
   const full=multi&&months[0].slice(0,4)!==mk.slice(0,4);
   const list=txns.length?`<div class="ledger">${txns.slice(0,100).map(t=>rowHTML(t,full?'full':true)).join('')}</div>${txns.length>100?`<p class="note">Showing 100 of ${txns.length}.</p>`:''}`:`<p class="empty">Nothing here ${periodPhrase(mk)}.</p>`;
   const html=`${head}<p class="note">${limitLine}</p>${!multi?limitBar(ls.spent,ls.limit,color,pr&&!pr.final?ls.projected:0):''}${proj}
@@ -1064,7 +1086,7 @@ function openScheduleSheet(id,pre){
 }
 function openGeneralDetail(parentId){
   const p=catById(parentId);if(!p)return;const mk=S.month;const months=periodMonths(mk);const set=new Set(months);
-  const txns=live().filter(t=>t.categoryId===parentId&&set.has(t.date.slice(0,7))&&!isTransfer(t)).sort((a,b)=>b.date.localeCompare(a.date));
+  const txns=live().filter(t=>partsOf(t).some(p=>p.categoryId===parentId)&&set.has(periodOf(t.date))&&!isTransfer(t)).sort((a,b)=>b.date.localeCompare(a.date));
   const total=txns.reduce((a,t)=>a-t.amount,0);const kids=childrenOf(parentId);
   const html=`<div class="bignum"><i class="swatch" style="background:${colorOf(parentId)}"></i><span class="num">${fmtShort(total)}</span></div><p class="note" style="margin-top:2px">${periodPhrase(mk)}, filed under ${esc(p.name)} itself rather than one of its sub-categories${kids.length?` (${kids.map(k=>esc(k.name)).join(', ')})`:''}. No sub-category limit covers these, so they show separately. Tap an entry and pick a sub-category to move it${kids.length?'':', or add sub-categories under Edit categories'}.</p>${txns.length?`<div class="ledger">${txns.map(t=>rowHTML(t,true)).join('')}</div>`:'<p class="empty">Nothing here.</p>'}`;
   openSheet(`${p.name} (no sub-category)`,html,`<button class="btn" data-act="close-sheet">Done</button><button class="btn primary" data-act="categories">Edit categories</button>`,{key:'general:'+parentId,reopen:()=>openGeneralDetail(parentId)});
@@ -1079,10 +1101,10 @@ function openDayDetail(date){
 function openPayeeDetail(payee,catId){
   const mk=S.month;const months=periodMonths(mk);const multi=months.length>1;const set=new Set(months);
   const all=live().filter(t=>isSpend(t)&&(t.payee||'Unknown')===payee&&(!catId||inCat(t,catId))).sort((a,b)=>b.date.localeCompare(a.date));
-  const txns=all.filter(t=>set.has(t.date.slice(0,7)));
+  const txns=all.filter(t=>set.has(periodOf(t.date)));
   const total=txns.reduce((a,t)=>a-t.amount,0);const count=txns.filter(t=>t.amount<0).length;
   const color=catId?colorOf(catId):NEUTRAL;const first=all[all.length-1];
-  const chartMonths=multi?months.slice(-24):periodMonths(mk,6);const vals=chartMonths.map(m=>all.filter(t=>t.date.startsWith(m)).reduce((a,t)=>a-t.amount,0));const nz=vals.filter(v=>v>0);
+  const chartMonths=multi?months.slice(-24):periodMonths(mk,6);const vals=chartMonths.map(m=>all.filter(t=>periodOf(t.date)===m).reduce((a,t)=>a-t.amount,0));const nz=vals.filter(v=>v>0);
   const bars=lineChartSVG(chartMonths.map(monthShort),[{name:payee,color,values:vals}],{avg:nz.length>1?nz.reduce((a,b)=>a+b,0)/nz.length:null});
   const head=`<div class="bignum"><span class="num">${fmtShort(total)}</span></div><p class="note" style="margin-top:2px">${count} ${count===1?'visit':'visits'} ${periodPhrase(mk)}${count?`, ${fmtShort(total/count)} each`:''}${first?`. First seen ${dateLabelY(first.date)}.`:''}</p>${periodBar()}`;
   const full=multi&&months[0].slice(0,4)!==mk.slice(0,4);
@@ -1096,16 +1118,16 @@ function openPayeeDetail(payee,catId){
 /* ================= Ledger (transactions) ================= */
 function txnListHTML(){
   const months=periodMonths(S.month);const set=new Set(months);const multi=months.length>1;
-  let list=live().filter(t=>set.has(t.date.slice(0,7)));
+  let list=live().filter(t=>set.has(periodOf(t.date)));
   if(S.filterAccount)list=list.filter(t=>t.accountId===S.filterAccount);
   if(S.filterCat)list=list.filter(t=>inCat(t,S.filterCat));
   if(S.filterReview)list=list.filter(t=>t.source==='import'&&!t.reviewed);
   const q=S.search.trim().toLowerCase();
-  if(q)list=list.filter(t=>[t.payee,t.note,t.bankDescription,catName(t.categoryId)].some(v=>v&&v.toLowerCase().includes(q)));
+  if(q){const qa=q.replace(',','.').replace(/[r\s]/g,'');list=list.filter(t=>[t.payee,t.note,t.bankDescription,catName(t.categoryId)].some(v=>v&&v.toLowerCase().includes(q))||(qa&&/^\d/.test(qa)&&(Math.abs(t.amount)/100).toFixed(2).includes(qa)));}
   if(!list.length){if(!S.accounts.length)return '';return `<p class="empty">${S.filterReview?'Everything is reviewed.':q||S.filterAccount||S.filterCat?'Nothing matches.':`Nothing ${periodPhrase(S.month)} yet. Tap Add, or import a statement under More.`}</p>`;}
   list.sort((a,b)=>b.date.localeCompare(a.date)||(b.createdAt||'').localeCompare(a.createdAt||''));
   const full=multi&&months[0].slice(0,4)!==S.month.slice(0,4);
-  if(S.filterReview)return `<div class="actions"><button class="btn small" data-act="review-all">Mark all ${list.length} as reviewed</button></div>`+list.slice(0,100).map(t=>`<div class="rev"><div class="rtop"><span class="date">${dateLabel(t.date)}</span><span class="payee">${esc(t.payee||'')}</span><span class="amt ${t.amount>0?'in':''}">${fmt(t.amount)}</span></div>${t.bankDescription&&t.bankDescription!==t.payee?`<div class="note" style="margin:2px 0 0">${esc(t.bankDescription)}</div>`:''}<div class="ract"><select data-rev-cat="${t.id}" aria-label="Category">${catOptions(t.amount>0?'income':'expense',t.categoryId)}</select><button class="btn small primary" style="flex:0 0 auto" data-rev-ok="${t.id}">Done</button><button class="btn small" data-act="edit-txn" data-id="${t.id}">Edit</button></div></div>`).join('')+(list.length>100?`<p class="note">Showing 100 of ${list.length}.</p>`:'');
+  if(S.filterReview)return `<div class="actions"><button class="btn small" data-act="review-all">Mark all ${list.length} as reviewed</button></div>`+list.slice(0,100).map(t=>`<div class="rev"><div class="rtop"><span class="date">${dateLabel(t.date)}</span><span class="payee">${esc(t.payee||'')}</span><span class="amt ${t.amount>0?'in':''}">${fmt(t.amount)}</span></div>${t.bankDescription&&t.bankDescription!==t.payee?`<div class="note" style="margin:2px 0 0">${esc(t.bankDescription)}</div>`:''}<div class="ract"><select data-rev-cat="${t.id}" aria-label="Category">${catOptions(t.amount>0?'income':'expense',t.categoryId)}</select><button class="btn small primary" style="flex:0 0 auto" data-rev-ok="${t.id}">Done</button><button class="btn small" data-rev-always="${t.id}" title="Always file this shop here">Always</button><button class="btn small" data-act="edit-txn" data-id="${t.id}">Edit</button></div></div>`).join('')+(list.length>100?`<p class="note">Showing 100 of ${list.length}.</p>`:'');
   let html='<div class="ledger">',last='';
   for(const t of list.slice(0,300)){const first=t.date!==last;last=t.date;html+=rowHTML(t,first?(full?'full':true):false);}
   return html+'</div>'+(list.length>300?`<p class="note">Showing 300 of ${list.length}. Use search to narrow it down.</p>`:'');
@@ -1129,8 +1151,8 @@ function viewBudget(){
     const note=st.limit?`${ps>st.limit?fmtShort(ps-st.limit)+' over':fmtShort(st.limit-ps)+' left'}, ${Math.round(ps/st.limit*100)}% used${!st.derived&&limitSince(p.id,mk)?', since '+monthShort(limitSince(p.id,mk)):''}`:(ps?`${fmtShort(ps)} spent, no limit`:'');
     html+=`<div class="bgroup"><div class="brow parent"><div class="top"><button class="name" data-act="cat-detail" data-id="${p.id}"><i class="swatch" style="background:${p.color}"></i>${catIcon(p.id)}${esc(p.name)}${note?`<small class="lft ${pst==='over'?'bad':''}">${note}</small>`:''}</button><span class="nums"><span class="${pst==='over'?'bad':pst==='warn'?'warn':''}">${fmtShort(st.limit?st.spent:ps)}</span><span>of</span>${kids.length?`<b class="sumv" title="Sum of the sub-category limits">${st.limit?fmtShort(st.limit):'—'}</b>`:`<input inputmode="decimal" data-budget="${p.id}" value="${limitFor(p.id,mk)?(limitFor(p.id,mk)/100).toFixed(0):''}" placeholder="—" aria-label="Limit for ${esc(p.name)}">`}</span></div>${limitBar(st.spent,st.limit,p.color,mid?st.projected:0)}</div>`;
     for(const c of kids){
-      const l=limitFor(c.id,mk),s=leaf[c.id]||0;const st=statusOf(s,l);
-      html+=`<div class="brow child"><div class="top"><button class="name" data-act="cat-detail" data-id="${c.id}">${esc(c.name)}${l?`<small class="lft ${st==='over'?'bad':''}">${s>l?fmtShort(s-l)+' over':fmtShort(l-s)+' left'}${limitSince(c.id,mk)?', since '+monthShort(limitSince(c.id,mk)):''}</small>`:''}</button><span class="nums"><span class="${st==='over'?'bad':st==='warn'?'warn':''}">${fmtShort(s)}</span><span>of</span><input inputmode="decimal" data-budget="${c.id}" value="${l?(l/100).toFixed(0):''}" placeholder="—" aria-label="Limit for ${esc(c.name)}"></span></div>${limitBar(s,l,p.color,mid?projectionFor(mk,c.id)?.projected:0)}</div>`;
+      const av=availableLimit(c.id,mk);const l=av.amount,s=leaf[c.id]||0;const st=statusOf(s,l);
+      html+=`<div class="brow child"><div class="top"><button class="name" data-act="cat-detail" data-id="${c.id}">${esc(c.name)}${av.base?`<small class="lft ${st==='over'?'bad':''}">${s>l?fmtShort(s-l)+' over':fmtShort(l-s)+' left'}${av.carry?` (${fmtShort(av.base)} ${av.carry>0?'+':'−'} ${fmtShort(Math.abs(av.carry))} carried over)`:''}${limitSince(c.id,mk)?', since '+monthShort(limitSince(c.id,mk)):''}</small>`:''}</button><span class="nums"><span class="${st==='over'?'bad':st==='warn'?'warn':''}">${fmtShort(s)}</span><span>of</span><input inputmode="decimal" data-budget="${c.id}" value="${l?(l/100).toFixed(0):''}" placeholder="—" aria-label="Limit for ${esc(c.name)}"></span></div>${limitBar(s,l,p.color,mid?projectionFor(mk,c.id)?.projected:0)}</div>`;
     }
     if(leaf[p.id]>0&&kids.length)html+=`<div class="brow child"><div class="top"><button class="name" data-act="cat-general" data-id="${p.id}">${esc(p.name)} (no sub-category)<small class="lft">filed under ${esc(p.name)} itself, so no sub-category limit covers it. Tap to see and move them.</small></button><span class="nums">${fmtShort(leaf[p.id])}</span></div></div>`;
     html+='</div>';
@@ -1151,7 +1173,7 @@ function viewBudget(){
 const fuelLive=()=>S.fuel.filter(f=>!f.deletedAt).sort((a,b)=>a.date.localeCompare(b.date)||a.odometer-b.odometer);
 function fuelStats(mk){
   const list=fuelLive();let km=0,litres=0,cost=0,n=0;
-  for(let i=0;i<list.length;i++){const f=list[i];if(!f.date.startsWith(mk))continue;n++;cost+=f.cost;litres+=f.litres;if(i>0&&f.odometer>list[i-1].odometer)km+=f.odometer-list[i-1].odometer;}
+  for(let i=0;i<list.length;i++){const f=list[i];if(periodOf(f.date)!==mk)continue;n++;cost+=f.cost;litres+=f.litres;if(i>0&&f.odometer>list[i-1].odometer)km+=f.odometer-list[i-1].odometer;}
   return {km,litres,cost,n,ppl:litres?cost/litres:0,costPerKm:km?cost/km:0};
 }
 function consumptionSeries(){
@@ -1273,47 +1295,49 @@ function openFuelPaste(){
       t.fuelId=f.id;t.updatedAt=now;f.transactionId=t.id;fuels.push(f);txns.push(t);
     }
     await upsertTxns(txns);S.fuel.push(...fuels);await dbPutMany('fuel',fuels);await setMeta('lastAccountId',accountId);
-    closeSheet();switchTab('fuel');S.month=fresh[fresh.length-1].date.slice(0,7);render();
+    closeSheet();switchTab('fuel');S.month=periodOf(fresh[fresh.length-1].date);render();
     toast(`${fuels.length} fill-ups imported${linked?`, ${linked} linked to entries already in the Ledger`:''}`);
   };
   setTimeout(()=>$('#fpText')?.focus(),50);
 }
 function openFuelSheet(id){
   if(!S.accounts.length){toast('Add an account first');openAccountSheet();return;}
-  const ex=id?S.fuel.find(f=>f.id===id):null;const list=fuelLive();const lastOdo=list.length?list[list.length-1].odometer:null;
+  const ex=id?S.fuel.find(f=>f.id===id):null;const list=fuelLive();const lastOdo=list.length?list[list.length-1].odometer:null;const lastPrice=list.length?list[list.length-1].pricePerL:null;
   const stations=[...new Set(S.fuel.map(f=>f.station).filter(Boolean))];
   const defAcc=ex?(S.transactions.find(t=>t.id===ex.transactionId)?.accountId||S.meta.lastAccountId):(accById(S.meta.lastAccountId)?S.meta.lastAccountId:S.accounts[0].id);
   const html=`<div class="row2"><div class="field"><label for="fuDate">Date</label><input id="fuDate" type="date" value="${ex?.date||todayStr()}"></div><div class="field"><label for="fuOdo">Odometer (km)</label><input id="fuOdo" inputmode="numeric" placeholder="${lastOdo?lastOdo:'e.g. 84250'}" value="${ex?ex.odometer:''}"></div></div>
-    <div class="row3"><div class="field"><label for="fuL">Litres</label><input id="fuL" inputmode="decimal" placeholder="0,0" value="${ex?String(ex.litres).replace('.',','):''}"></div><div class="field"><label for="fuCost">Total (R)</label><input id="fuCost" inputmode="decimal" placeholder="0,00" value="${ex?(ex.cost/100).toFixed(2).replace('.',','):''}"></div><div class="field"><label for="fuP">Price/L</label><input id="fuP" inputmode="decimal" placeholder="0,00" value="${ex?(ex.pricePerL/100).toFixed(2).replace('.',','):''}"></div></div>
+    <div class="row2"><div class="field"><label for="fuP">Price per litre (R)</label><input id="fuP" inputmode="decimal" placeholder="${lastPrice?fmtNum(lastPrice/100,2):'0,00'}" value="${ex?(ex.pricePerL/100).toFixed(2).replace('.',','):''}"></div><div class="field"><label for="fuL">Litres</label><input id="fuL" inputmode="decimal" placeholder="0,00" value="${ex?String(ex.litres).replace('.',','):''}"></div></div>
+    <div class="calc"><span class="cl">Total</span><span class="cv" id="fuTotal">—</span><span class="cw" id="fuCalc">Type the price per litre and the litres, in whichever order suits you. The pump's total is worked out for you.</span></div>
     <div class="row2"><div class="field"><label for="fuSt">Station</label><input id="fuSt" list="stations" autocomplete="off" placeholder="e.g. Engen Fourways" value="${esc(ex?.station||'')}"><datalist id="stations">${stations.map(s=>`<option value="${esc(s)}">`).join('')}</datalist></div><div class="field"><label for="fuAcc">Paid from</label><select id="fuAcc">${accOptions(defAcc)}</select></div></div>
     <div class="field"><label class="chk"><input type="checkbox" id="fuFull" ${ex?(ex.full?'checked':''):'checked'}>Filled the tank</label></div>
     <div class="field"><label for="fuNote">Note</label><input id="fuNote" autocomplete="off" placeholder="Optional" value="${esc(ex?.note||'')}"></div>
-    <p class="note">Fill in any two of litres, total and price per litre; the third is worked out. Consumption is measured between full tanks.</p>`;
+    <p class="note">Consumption is measured between full tanks, so leave "Filled the tank" ticked whenever you fill up completely.</p>`;
   openSheet(ex?'Edit fill-up':'Log fill-up',html,`${ex?`<button class="btn danger" id="fuDel">Delete</button>`:''}<button class="btn primary" id="fuSave">${ex?'Save changes':'Log fill-up'}</button>`,{key:'fuel:'+(id||'new'),reopen:()=>openFuelSheet(id)});
-  const L=()=>parseNum($('#fuL').value),C=()=>parseAmountInput($('#fuCost').value),P=()=>parseAmountInput($('#fuP').value);
-  const show=(el,cents)=>{el.value=(cents/100).toFixed(2).replace('.',',');};
-  $('#fuL').oninput=()=>{const l=L();if(!l)return;if(C())show($('#fuP'),Math.round(C()/l));else if(P())show($('#fuCost'),Math.round(P()*l));};
-  $('#fuCost').oninput=()=>{const l=L();if(l&&C())show($('#fuP'),Math.round(C()/l));};
-  $('#fuP').oninput=()=>{const l=L();if(l&&P())show($('#fuCost'),Math.round(P()*l));};
+  // Two inputs only: price per litre and litres. Neither ever rewrites the other, so it doesn't matter which you fill in first.
+  const L=()=>parseNum($('#fuL').value),P=()=>parseAmountInput($('#fuP').value);
+  const totalCents=()=>{const l=L(),p=P();return (l>0&&p>0)?Math.round(p*l):null;};
+  const draw=()=>{const c=totalCents();const l=L(),p=P();
+    $('#fuTotal').textContent=c==null?'—':fmt(c);
+    $('#fuCalc').textContent=c!=null?`${fmtNum(l,2)} L at ${fmtNum(p/100,2)} a litre`:(l>0&&!(p>0))?'Now the price per litre.':(p>0&&!(l>0))?'Now the litres.':'Type the price per litre and the litres, in whichever order suits you. The pump\'s total is worked out for you.';};
+  $('#fuP').oninput=draw;$('#fuL').oninput=draw;draw();
   $('#fuSave').onclick=async()=>{
-    const odo=parseNum($('#fuOdo').value),litres=L();let cost=C(),price=P();
+    const odo=parseNum($('#fuOdo').value),litres=L(),price=P();
     if(!odo||odo<=0){toast('Enter the odometer reading');$('#fuOdo').focus();return;}
+    if(!price||price<=0){toast('Enter the price per litre');$('#fuP').focus();return;}
     if(!litres||litres<=0){toast('Enter the litres');$('#fuL').focus();return;}
-    if(!cost&&price)cost=Math.round(price*litres);
-    if(!cost||cost<=0){toast('Enter what you paid');$('#fuCost').focus();return;}
-    price=Math.round(cost/litres);
+    const cost=Math.round(price*litres);
     const date=$('#fuDate').value||todayStr(),station=$('#fuSt').value.trim(),accountId=$('#fuAcc').value,note=$('#fuNote').value.trim(),now=nowISO();
     let shiftList=[],shiftDelta=0;
     if(ex&&Math.round(odo)!==ex.odometer){const delta=Math.round(odo)-ex.odometer;shiftDelta=delta;const earlier=fuelLive().filter(x=>x.id!==ex.id&&(x.date<ex.date||(x.date===ex.date&&x.odometer<ex.odometer)));
       if(earlier.length&&await ask(`Shift the ${earlier.length} earlier fill-up${earlier.length===1?'':'s'} by ${delta>0?'+':''}${delta.toLocaleString('en-ZA')} km as well, so the distances between them stay the same? Choose Cancel to change only this one.`,'Shift them too'))shiftList=earlier;}
-    const f=Object.assign(ex||{id:uid(),createdAt:now},{date,odometer:Math.round(odo),litres:Math.round(litres*100)/100,cost,pricePerL:price,station,full:$('#fuFull').checked,note,updatedAt:now});
+    const f=Object.assign(ex||{id:uid(),createdAt:now},{date,odometer:Math.round(odo),litres:Math.round(litres*1000)/1000,cost,pricePerL:price,station,full:$('#fuFull').checked,note,updatedAt:now});
     if(shiftList.length){for(const x of shiftList){x.odometer+=shiftDelta;x.updatedAt=now;}await dbPutMany('fuel',shiftList);}
     let t=ex?S.transactions.find(x=>x.id===ex.transactionId):null;
     if(!t){t={id:uid(),createdAt:now,source:'manual',reviewed:true,note:''};f.transactionId=t.id;}
     Object.assign(t,{accountId,date,amount:-cost,payee:station||'Fuel',categoryId:fuelCatId()||'cat_uncat',fuelId:f.id,updatedAt:now});
     delete t.deletedAt;
     await upsertTxns([t]);await upsert('fuel','fuel',f);await setMeta('lastAccountId',accountId);
-    sheetDone();S.month=date.slice(0,7);render();toast(ex?'Saved':'Fill-up logged');
+    sheetDone();S.month=periodOf(date);render();toast(ex?'Saved':'Fill-up logged');
   };
   if(ex)$('#fuDel').onclick=async()=>{
     const now=nowISO();ex.deletedAt=now;const t=S.transactions.find(x=>x.id===ex.transactionId);const list=[];if(t){t.deletedAt=now;list.push(t);}
@@ -1355,9 +1379,11 @@ function viewMore(){
   <div class="section"><h3>Categories and rules</h3><div class="actions"><button class="btn" data-act="categories">Categories</button><button class="btn" data-act="rules">Rules${S.rules.length?` (${S.rules.length})`:''}</button><button class="btn" data-act="recurring">Monthly payments${S.schedules.filter(x=>x.active).length?` (${S.schedules.filter(x=>x.active).length})`:''}</button></div></div>
   <div class="section"><h3>Home screen</h3><p class="note">Reorder or hide the dashboard sections.</p><div class="actions"><button class="btn" data-act="layout">Home layout</button></div></div>
   ${viewPrivacy()}
-  <div class="section"><h3>Back up</h3>${backupNote}<p class="note">Everything on this phone in one file. Restoring replaces what's here with the file's contents.</p><div class="actions"><button class="btn primary" data-act="export" ${txCount?'':'disabled'}>Export backup</button><button class="btn" data-act="restore">Restore from file</button><input id="restoreFile" type="file" accept=".json,application/json" hidden></div></div>
+  <div class="section"><h3>Back up</h3>${backupNote}<p class="note">Everything on this phone in one file. Restoring replaces what's here with the file's contents.</p><div class="actions"><button class="btn primary" data-act="export" ${txCount?'':'disabled'}>Export backup</button><button class="btn" data-act="restore">Restore from file</button><input id="restoreFile" type="file" accept=".json,application/json" hidden></div>
+    <p class="note">For a spreadsheet: a CSV of every transaction (one line per category part) and one of your fill-ups.</p><div class="actions"><button class="btn" data-act="export-csv" ${txCount?'':'disabled'}>Transactions (CSV)</button><button class="btn" data-act="export-fuel" ${fuelLive().length?'':'disabled'}>Fill-ups (CSV)</button></div></div>
   <div class="section"><h3>Recently deleted</h3><div class="actions"><button class="btn" data-act="deleted" ${deleted?'':'disabled'}>${deleted?`${deleted} transaction${deleted===1?'':'s'}`:'Nothing deleted'}</button></div></div>
   <div class="section"><h3>This app</h3>${install}
+    <div class="field"><label for="periodStart">My month starts on the</label><select id="periodStart">${Array.from({length:28},(_,i)=>i+1).map(d=>`<option value="${d}" ${periodStartDay()===d?'selected':''}>${d===1?'1st (calendar month)':ord(d)}</option>`).join('')}</select><span class="note">Paid on the 25th? Choose it, and every month in Ledger runs from one payday to the day before the next: limits, what's left, the pace chart, comparisons, all of it.</span></div>
     <div class="row2"><div class="field"><label for="theme">Appearance</label><select id="theme"><option value="" ${!S.meta.theme?'selected':''}>Match the phone</option><option value="light" ${S.meta.theme==='light'?'selected':''}>Light</option><option value="dark" ${S.meta.theme==='dark'?'selected':''}>Dark</option></select></div><div class="field"><label for="textSize">Text size</label><select id="textSize"><option value="" ${!S.meta.textSize?'selected':''}>Normal</option><option value="large" ${S.meta.textSize==='large'?'selected':''}>Large</option></select></div></div>
     ${storage}${usage}<div class="kv"><span>Cloud sync</span><b>Not set up yet</b></div><div class="kv"><span>Version</span><b>${APP_VERSION}</b></div>
     <p class="note" style="margin-top:12px">Anyone can install Ledger from the same address and get their own, separate copy on their own phone. Nothing is shared between phones.</p><div class="actions"><button class="btn" data-act="share-app">Share Ledger</button></div></div>`;
@@ -1369,9 +1395,14 @@ function bindView(){
   const f=$('#filterAcc');if(f)f.onchange=()=>{S.filterAccount=f.value;$('#txlist').innerHTML=txnListHTML();};
   const fc=$('#filterCat');if(fc)fc.onchange=()=>{S.filterCat=fc.value;$('#txlist').innerHTML=txnListHTML();};
   $$('[data-rev-cat]').forEach(sel=>sel.onchange=async()=>{const t=S.transactions.find(x=>x.id===da(sel,'rev-cat'));if(!t)return;t.categoryId=sel.value;t.updatedAt=nowISO();await upsertTxns([t]);});
+  $$('[data-rev-always]').forEach(b=>b.onclick=async()=>{const t=S.transactions.find(x=>x.id===da(b,'rev-always'));if(!t)return;const sel=b.parentElement.querySelector('select[data-rev-cat]');const catId=sel?sel.value:t.categoryId;const key=normText(t.payee||t.bankDescription||'');if(!key){toast('No payee to match on');return;}
+    if(!S.rules.some(r=>normText(r.match)===key)){const r={id:uid(),match:t.payee||t.bankDescription,categoryId:catId,rename:'',createdAt:nowISO(),updatedAt:nowISO()};await upsert('rules','rules',r);}
+    const same=live().filter(x=>normText(x.payee||'')===key&&x.source==='import'&&!x.reviewed);for(const x of same){x.categoryId=catId;x.reviewed=true;x.updatedAt=nowISO();}await upsertTxns(same);
+    if(!live().some(x=>x.source==='import'&&!x.reviewed))S.filterReview=false;render();toast(`${t.payee||'This shop'} will always go under ${catName(catId)}${same.length>1?`; ${same.length} filed`:''}`);});
   $$('[data-rev-ok]').forEach(b=>b.onclick=async()=>{const t=S.transactions.find(x=>x.id===da(b,'rev-ok'));if(!t)return;t.reviewed=true;t.updatedAt=nowISO();await upsertTxns([t]);if(!live().some(x=>x.source==='import'&&!x.reviewed)){S.filterReview=false;toast('All reviewed');}render();});
   $$('[data-budget]').forEach(inp=>{inp.onchange=async()=>{const c=parseAmountInput(inp.value);await setBudget(inp.dataset.budget,S.month,c==null?0:c);render();};});
   const th=$('#theme');if(th)th.onchange=async()=>{await setMeta('theme',th.value);applyTheme();};
+  const ps=$('#periodStart');if(ps)ps.onchange=async()=>{await setMeta('periodStart',Number(ps.value));S.month=curPeriod();render();toast(Number(ps.value)===1?'Back to calendar months':`Months now run from the ${ord(Number(ps.value))}`);};
   const ts=$('#textSize');if(ts)ts.onchange=async()=>{await setMeta('textSize',ts.value);applyTheme();};
   const rf=$('#restoreFile');if(rf)rf.onchange=()=>{if(rf.files[0])restoreBackup(rf.files[0]);rf.value='';};
   const al=$('#autoLock');if(al)al.onchange=async()=>{await setMeta('lock',Object.assign({},lockCfg(),{autoLock:Number(al.value)}));};
@@ -1391,7 +1422,7 @@ const ACTIONS={
   'schedule-new':()=>openScheduleSheet(),
   'layout':()=>openLayoutSheet(),
   'month':el=>{S.month=shiftMonth(S.month,Number(da(el,'d')));render();},
-  'month-now':()=>{S.month=monthKey(new Date());render();},
+  'month-now':()=>{S.month=curPeriod();render();},
   'add-txn':()=>{if(!S.accounts.length){toast('Add an account first');openAccountSheet();return;}openTxnSheet();},
   'edit-txn':el=>openTxnSheet(da(el,'id')),
   'add-account':()=>openAccountSheet(),
@@ -1408,6 +1439,8 @@ const ACTIONS={
   'categories':()=>openCategoriesList(),
   'rules':()=>openRulesList(),
   'export':()=>exportBackup(),
+  'export-csv':async()=>{if(await shareFile('ledger-transactions-'+todayStr()+'.csv','text/csv',transactionsCSV()))toast('Transactions exported');},
+  'export-fuel':async()=>{if(await shareFile('ledger-fill-ups-'+todayStr()+'.csv','text/csv',fuelCSV()))toast('Fill-ups exported');},
   'restore':()=>$('#restoreFile').click(),
   'deleted':()=>openDeleted(),
   'install':async()=>{if(!deferredInstall)return;deferredInstall.prompt();await deferredInstall.userChoice;deferredInstall=null;render();},
@@ -1461,7 +1494,8 @@ function openTxnSheet(id,pre){
     <div class="seg" id="kind">${['expense','income','transfer'].map(k=>`<button type="button" data-k="${k}" class="${k===kind?'on':''}">${k[0].toUpperCase()+k.slice(1)}</button>`).join('')}</div>
     <div class="field"><label for="fAmt">Amount</label><input id="fAmt" class="big" inputmode="decimal" autocomplete="off" placeholder="0,00" value="${amt}"></div>
     <div class="field" data-kind="expense income"><label for="fPayee">Payee</label><input id="fPayee" list="payees" autocomplete="off" placeholder="Where or who" value="${esc(ex?.payee??pre.payee??'')}"><datalist id="payees">${payeeOptions()}</datalist>${!ex&&recentPayees().length?`<div class="chips small">${recentPayees().map(p=>`<button type="button" class="chip" data-payee="${esc(p)}">${esc(p)}</button>`).join('')}</div>`:''}</div>
-    <div class="field" data-kind="expense income"><label for="fCat">Category</label><select id="fCat">${catOptions(kind==='income'?'income':'expense',ex?.categoryId||pre.categoryId)}</select></div>
+    <div class="field" data-kind="expense income" id="fCatField"><label for="fCat">Category</label><select id="fCat">${catOptions(kind==='income'?'income':'expense',ex?.categoryId||pre.categoryId)}</select></div>
+    <div class="field" data-kind="expense income"><div id="fSplit" ${ex&&ex.splits&&ex.splits.length?'':'hidden'}></div><div class="actions" style="margin:0"><button type="button" class="btn small" id="fSplitBtn">${ex&&ex.splits&&ex.splits.length?'Remove the split':'Split across categories'}</button></div></div>
     <div class="field" data-kind="expense income"><label for="fAcc">Account</label><select id="fAcc">${accOptions(defaultAcc)}</select></div>
     <div class="row2" data-kind="transfer"><div class="field"><label for="fFrom">From</label><select id="fFrom">${accOptions(fromId)}</select></div><div class="field"><label for="fTo">To</label><select id="fTo">${accOptions(toId)}</select></div></div>
     <div class="row2"><div class="field"><label for="fDate">Date</label><input id="fDate" type="date" value="${ex?.date||pre.date||todayStr()}"></div><div class="field"><label for="fNote">Note</label><input id="fNote" autocomplete="off" placeholder="Optional" value="${esc(ex?.note||'')}"></div></div>
@@ -1478,6 +1512,18 @@ function openTxnSheet(id,pre){
   };
   setKind(kind);
   $$('#kind button').forEach(b=>b.onclick=()=>setKind(b.dataset.k));
+  let splitRows=ex&&ex.splits&&ex.splits.length?ex.splits.map(x=>({categoryId:x.categoryId,cents:Math.abs(x.amount)})):[];
+  const totalCents=()=>parseAmountInput($('#fAmt').value)||0;
+  const drawSplit=()=>{const box=$('#fSplit');if(!splitRows.length){box.hidden=true;$('#fCatField').hidden=false;$('#fSplitBtn').textContent='Split across categories';return;}
+    box.hidden=false;$('#fCatField').hidden=true;$('#fSplitBtn').textContent='Remove the split';
+    const used=splitRows.reduce((a,r)=>a+(r.cents||0),0);const left=totalCents()-used;
+    box.innerHTML=`<label>Split across categories</label>${splitRows.map((r,i)=>`<div class="row2" style="grid-template-columns:1fr 110px 44px;gap:6px;margin:6px 0"><select data-split-cat="${i}">${catOptions(kind==='income'?'income':'expense',r.categoryId)}</select><input data-split-amt="${i}" inputmode="decimal" placeholder="0,00" value="${r.cents?(r.cents/100).toFixed(2).replace('.',','):''}" aria-label="Amount for part ${i+1}"><button type="button" class="btn small" data-split-del="${i}" aria-label="Remove part">×</button></div>`).join('')}<div class="actions" style="margin:6px 0 0"><button type="button" class="btn small" id="fSplitAdd">Add a part</button><span class="note" style="margin:0;align-self:center" id="fSplitLeft">${left===0?'Fully allocated':left>0?fmtShort(left)+' still to allocate':fmtShort(-left)+' too much'}</span></div>`;
+    $$('[data-split-cat]',box).forEach(el=>el.onchange=()=>{splitRows[Number(da(el,'split-cat'))].categoryId=el.value;});
+    $$('[data-split-amt]',box).forEach(el=>el.onchange=()=>{splitRows[Number(da(el,'split-amt'))].cents=parseAmountInput(el.value)||0;drawSplit();});
+    $$('[data-split-del]',box).forEach(el=>el.onclick=()=>{splitRows.splice(Number(da(el,'split-del')),1);if(splitRows.length<2)splitRows=[];drawSplit();});
+    $('#fSplitAdd').onclick=()=>{const usedNow=splitRows.reduce((a,r)=>a+(r.cents||0),0);splitRows.push({categoryId:'cat_uncat',cents:Math.max(0,totalCents()-usedNow)});drawSplit();};};
+  $('#fSplitBtn').onclick=()=>{if(splitRows.length){splitRows=[];}else{const tot=totalCents();splitRows=[{categoryId:$('#fCat').value||'cat_uncat',cents:tot},{categoryId:'cat_uncat',cents:0}];}drawSplit();};
+  if(splitRows.length)drawSplit();
   let catTouched=!!ex||!!pre.categoryId;
   $('#fCat').onchange=()=>{catTouched=true;};
   $('#fPayee').oninput=()=>{
@@ -1490,12 +1536,12 @@ function openTxnSheet(id,pre){
   };
   $('#fDate').onchange=()=>{const d=Number(($('#fDate').value||todayStr()).slice(8));if(d)$('#fRepDay').textContent=ord(d);};
   $$('[data-payee]',sheet).forEach(b=>b.onclick=()=>{const inp=$('#fPayee');inp.value=da(b,'payee');inp.dispatchEvent(new Event('input',{bubbles:true}));$('#fAmt').focus();});
-  $('#fSave').onclick=()=>saveTxnForm(ex,counterpart,()=>kind,pre,false);
-  const more=$('#fMore');if(more)more.onclick=()=>saveTxnForm(ex,counterpart,()=>kind,pre,true);
+  $('#fSave').onclick=()=>saveTxnForm(ex,counterpart,()=>kind,pre,false,()=>splitRows);
+  const more=$('#fMore');if(more)more.onclick=()=>saveTxnForm(ex,counterpart,()=>kind,pre,true,()=>splitRows);
   if(ex)$('#fDel').onclick=()=>deleteTxn(ex.id);
   if(!ex&&!pre.amount){const a=$('#fAmt');a.focus();a.setAttribute('enterkeyhint','done');}
 }
-async function saveTxnForm(ex,counterpart,getKind,pre,another){
+async function saveTxnForm(ex,counterpart,getKind,pre,another,getSplits){
   const kind=getKind();const cents=parseAmountInput($('#fAmt').value);
   if(cents==null||cents<=0){toast('Enter an amount');$('#fAmt').focus();return;}
   const date=$('#fDate').value||todayStr();const note=$('#fNote').value.trim();const now=nowISO();
@@ -1508,10 +1554,13 @@ async function saveTxnForm(ex,counterpart,getKind,pre,another){
     const b=Object.assign(inEx||{id:uid(),createdAt:now,source:'manual',reviewed:true},{accountId:to,date,amount:cents,payee:'From '+(accById(from)?.name||''),categoryId:'cat_transfer',note,transferId,updatedAt:now});
     await upsertTxns([a,b]);
   }else{
-    const payee=$('#fPayee').value.trim();const categoryId=$('#fCat').value||'cat_uncat';const accountId=$('#fAcc').value;
+    const payee=$('#fPayee').value.trim();let categoryId=$('#fCat').value||'cat_uncat';const accountId=$('#fAcc').value;
     if(!accountId){toast('Add an account first');return;}
+    const sr=(getSplits?getSplits():[]).filter(r=>r.cents>0);let splits=null;
+    if(sr.length>=2){const sum=sr.reduce((a,r)=>a+r.cents,0);if(sum!==cents){toast(`The parts add up to ${fmt(sum)}, not ${fmt(cents)}`);return;}splits=sr.map(r=>({categoryId:r.categoryId,amount:kind==='expense'?-r.cents:r.cents}));categoryId=splits[0].categoryId;}
     const base=ex||{id:uid(),createdAt:now,source:'manual',reviewed:true};
     const t=Object.assign(base,{accountId,date,amount:kind==='expense'?-cents:cents,payee,categoryId,note,updatedAt:now});
+    if(splits)t.splits=splits;else delete t.splits;
     if(t.transferId){delete t.transferId;if(counterpart){counterpart.deletedAt=now;await upsertTxns([counterpart]);}}
     const rev=$('#fRev');if(rev)t.reviewed=rev.checked;
     const rep=$('#fRepeat');const wantRepeat=!!(rep&&rep.checked);let sched=t.scheduleId?S.schedules.find(x=>x.id===t.scheduleId):null;let newSched=false;
@@ -1521,12 +1570,12 @@ async function saveTxnForm(ex,counterpart,getKind,pre,another){
       if(wantRepeat&&ex&&sched.amount!==t.amount&&await ask(`${payee||'This payment'} is scheduled at ${fmt(Math.abs(sched.amount))} a month. Use ${fmt(Math.abs(t.amount))} from next month too?`,'Update schedule')){sched.amount=t.amount;sched.updatedAt=now;await dbPut('schedules',sched);}
     }
     await upsertTxns([t]);await setMeta('lastAccountId',accountId);
-    if(newSched){sheetDone();S.month=date.slice(0,7);render();toast(`Added. Repeats on the ${ord(sched.day)} of every month`);await runScheduled();return;}
+    if(newSched){sheetDone();S.month=periodOf(date);render();toast(`Added. Repeats on the ${ord(sched.day)} of every month`);await runScheduled();return;}
     if(sched&&sched.active)await generateScheduled();
   }
-  if(another){const acc=$('#fAcc')?$('#fAcc').value:undefined;toast('Added');S.month=date.slice(0,7);render();openTxnSheet(null,{accountId:acc,date});return;}
+  if(another){const acc=$('#fAcc')?$('#fAcc').value:undefined;toast('Added');S.month=periodOf(date);render();openTxnSheet(null,{accountId:acc,date});return;}
   sheetDone();toast(ex?'Saved':'Added');
-  if(!ex)S.month=date.slice(0,7);
+  if(!ex)S.month=periodOf(date);
   render();
 }
 async function deleteTxn(id){
@@ -1545,7 +1594,8 @@ function openAccountSheet(id){
   const html=`<div class="field"><label for="aName">Name</label><input id="aName" placeholder="e.g. FNB cheque" value="${esc(ex?.name||'')}" autocomplete="off"></div>
     <div class="field"><label for="aType">Type</label><select id="aType">${Object.entries(ACCOUNT_TYPES).map(([k,v])=>`<option value="${k}" ${(ex?.type||'cheque')===k?'selected':''}>${v}</option>`).join('')}</select></div>
     <div class="row2"><div class="field"><label for="aBal">Opening balance</label><input id="aBal" inputmode="decimal" placeholder="0,00" value="${ex?(ex.openingBalance/100).toFixed(2).replace('.',','):''}"></div><div class="field"><label for="aDate">As of</label><input id="aDate" type="date" value="${ex?.openingDate||todayStr()}"></div></div>
-    <p class="note">The opening balance is what the account held before anything recorded here; for a credit card, enter what you owed as a negative number.</p>`;
+    <p class="note">The opening balance is what the account held before anything recorded here; for a credit card, enter what you owed as a negative number.</p>
+    ${ex?`<div class="section" style="margin-top:8px"><h3>Reconcile<small>Ledger says ${fmt(accountBalance(ex))}</small></h3><p class="note">Type the balance your bank shows right now. If it differs, Ledger records the difference as a balance adjustment (it doesn't count as spending) so the two match again${ex.reconciledAt?`. Last reconciled ${dateLabel(ex.reconciledAt)}`:''}.</p><div class="actions"><button type="button" class="btn" id="aRecon">Reconcile with the bank</button></div></div>`:''}`;
   const canDelete=ex&&!live().some(t=>t.accountId===ex.id);
   const foot=`${ex?`<button class="btn danger" id="aDel" ${canDelete?'':'disabled'}>Delete</button>`:''}<button class="btn primary" id="aSave">${ex?'Save changes':'Add account'}</button>`;
   openSheet(ex?'Edit account':'New account',html,foot,{key:'acct:'+(id||'new'),reopen:()=>openAccountSheet(id)});
@@ -1556,6 +1606,11 @@ function openAccountSheet(id){
     await upsert('accounts','accounts',a);if(!ex&&!accById(S.meta.lastAccountId))await setMeta('lastAccountId',a.id);
     sheetDone();render();toast(ex?'Saved':'Account added');
   };
+  if(ex)$('#aRecon').onclick=async()=>{const v=await askText('Balance your bank shows now (R)',{type:'text',inputmode:'decimal',okLabel:'Reconcile'});if(v===null)return;const bank=parseAmountInput(v);if(bank==null){toast('Enter an amount');return;}
+    const diff=bank-accountBalance(ex);const now=nowISO();
+    if(diff!==0){await upsertTxns([{id:uid(),accountId:ex.id,date:todayStr(),amount:diff,payee:'Balance adjustment',categoryId:'cat_transfer',note:'Reconciled to the bank balance',source:'manual',reviewed:true,createdAt:now,updatedAt:now}]);}
+    ex.reconciledAt=todayStr();ex.updatedAt=now;await upsert('accounts','accounts',ex);render();sheetDone();
+    toast(diff===0?'Matches the bank exactly':`Adjusted by ${fmt(diff)} to match the bank`);};
   if(ex&&canDelete)$('#aDel').onclick=async()=>{if(!await ask(`Delete ${ex.name}?`,'Delete',true))return;S.accounts=S.accounts.filter(a=>a.id!==ex.id);await dbDeleteMany('accounts',[ex.id]);sheetDone();render();toast('Account deleted');};
   if(!ex)$('#aName').focus();
 }
@@ -1575,6 +1630,7 @@ function openCategorySheet(id,parentId){
   const color=ex?.color||nextColor();
   const html=`<div class="field"><label for="cName">Name</label><input id="cName" value="${esc(ex?.name||'')}" autocomplete="off" placeholder="${isChild?'e.g. Takeaways':'e.g. Pets'}"></div>
     <div class="field"><label for="cParent">Belongs to</label><select id="cParent"><option value="">None: this is a top-level category</option>${parents.filter(p=>p.id!==ex?.id).map(p=>`<option value="${p.id}" ${(ex?.parentId||parentId)===p.id?'selected':''}>${esc(p.name)}</option>`).join('')}</select></div>
+    ${(!ex||!childrenOf(ex.id).length)?`<div class="field"><label class="chk"><input type="checkbox" id="cRoll" ${ex?.rollover?'checked':''}>Carry what's left into the next month</label><span class="note">Under the limit this month? The difference is added to next month's. Over it? Next month starts short. Like an envelope.</span></div>`:''}
     <div id="topOnly" ${isChild?'hidden':''}><div class="field"><label for="cEmoji">Icon (an emoji, optional)</label><input id="cEmoji" maxlength="4" placeholder="e.g. 🍔" value="${esc(ex?.emoji||'')}" autocomplete="off" style="width:90px"></div><div class="field"><label>Colour</label><div class="colors" id="cColors">${PALETTE.map(c=>`<button type="button" data-color="${c}" class="${c===color?'on':''}" style="background:${c}" aria-label="${c}"></button>`).join('')}</div></div>
     <div class="field"><label class="chk"><input type="checkbox" id="cIncome" ${ex?.income?'checked':''}>This is income</label></div></div>`;
   const used=ex?live().filter(t=>inCat(t,ex.id)).length:0;const kids=ex?childrenOf(ex.id):[];
@@ -1587,6 +1643,7 @@ function openCategorySheet(id,parentId){
     const pid=$('#cParent').value||null;
     if(ex&&pid&&childrenOf(ex.id).length){toast('Move its sub-categories out first');return;}
     const c=Object.assign(ex||{id:uid(),createdAt:nowISO(),sort:500+S.categories.length},{name,updatedAt:nowISO()});
+    const cr=$('#cRoll');if(cr)c.rollover=cr.checked;
     if(pid){c.parentId=pid;delete c.color;delete c.income;delete c.emoji;}else{delete c.parentId;c.color=chosen;c.income=$('#cIncome').checked;c.emoji=$('#cEmoji').value.trim();}
     await upsert('categories','categories',c);render();if(SHEETS.length>1)sheetBack();else openCategoriesList();toast('Saved');
   };
@@ -1787,7 +1844,7 @@ async function runImport(){
   await upsertTxns(upserts);
   S.batches.push(batch);await dbPut('importBatches',batch);
   await setMeta('mapping:'+IMP.accountId,IMP.mapping);await setMeta('lastImportAccount',IMP.accountId);
-  await closeSheet();if(latest)S.month=latest.slice(0,7);switchTab('txns');
+  await closeSheet();if(latest)S.month=periodOf(latest);switchTab('txns');
   toast(`Imported ${batch.created} new, matched ${batch.matched}`);
 }
 async function rollbackImport(id){
@@ -1811,6 +1868,16 @@ function openDeleted(){
 }
 
 /* ================= backup ================= */
+const csvEsc=v=>{v=String(v??'');return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
+async function shareFile(name,type,text){
+  let shared=false;
+  try{if(typeof File!=='undefined'&&navigator.canShare){const file=new File([text],name,{type});if(navigator.canShare({files:[file]})){await navigator.share({files:[file],title:name});shared=true;}}}
+  catch(e){if(e&&e.name==='AbortError')return false;}
+  if(!shared){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000);}
+  return true;
+}
+function transactionsCSV(){const rows=[['Date','Payee','Category','Sub-category','Amount','Account','Note','Source','Reviewed']];for(const t of live().slice().sort((a,b)=>a.date.localeCompare(b.date))){for(const p of partsOf(t)){const c=catById(p.categoryId);const top=topOf(p.categoryId);rows.push([t.date,t.payee||'',top?top.name:'Uncategorised',c&&c.parentId?c.name:'',(p.amount/100).toFixed(2),accById(t.accountId)?.name||'',t.note||'',t.source||'manual',t.reviewed?'yes':'no']);}}return rows.map(r=>r.map(csvEsc).join(',')).join('\r\n');}
+function fuelCSV(){const rows=[['Date','Odometer km','Litres','Price per litre','Total','Station','Full tank']];for(const f of fuelLive())rows.push([f.date,f.odometer,f.litres,(f.pricePerL/100).toFixed(2),(f.cost/100).toFixed(2),f.station||'',f.full?'yes':'no']);return rows.map(r=>r.map(csvEsc).join(',')).join('\r\n');}
 function backupJSON(){return JSON.stringify({app:'ledger',version:APP_VERSION,exportedAt:nowISO(),accounts:S.accounts,categories:S.categories,transactions:S.transactions,budgets:S.budgets,rules:S.rules,importBatches:S.batches,fuel:S.fuel,schedules:S.schedules,meta:S.meta});}
 async function exportBackup(){
   let json=backupJSON();const name='ledger-backup-'+todayStr()+'.json';
@@ -1914,6 +1981,7 @@ async function init(){
   try{history.replaceState({t:'home',s:0},'');}catch{}
   db=await openDB();
   await loadAll();
+  S.month=curPeriod();
   applyTheme();
   if(lockCfg()){$('#view').innerHTML='';await showLock();}
   render();
@@ -1930,7 +1998,7 @@ async function init(){
   }
 }
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;if(S.tab==='more')render();});
-window.Ledger={S,fn:{parseCSV,parseDate,parseAmount,detectTable,guessMapping,parseImportRows,runImport,rollbackImport,loadImportText,openImporter,renderPreview,upsertTxns,deleteTxn,setBudget,monthTotals,spentFor,spentTop,spentLeaf,effectiveLimit,projectionFor,insights,accountBalance,backupJSON,restoreData,applyRules,cleanPayee,render,openTxnSheet,saveTxnForm,openAccountSheet,openCategoriesList,openCategorySheet,openCatDetail,setMeta,openFuelSheet,openFuelSettings,fuelStats,consumption,consumptionSeries,drivingPace,serviceForecast,fuelCatId,topCats,childrenOf,statusOf,periodMonths,periodLabel,leafMapFor,topMapFor,totalsFor,payeesFor,openPayeeDetail,openDayDetail,openGeneralDetail,ask,askText,setPin,verifyPin,lockNow,tryPin,encryptText,decryptText,newPinFlow,removePinFlow,parseFuelText,openFuelPaste,openFuelMenu,showTip,hideTip,limitStatusFor,limitedTotals,generateScheduled,runScheduled,nextScheduledDate,openScheduleSheet,limitFor,limitSince,recurringPayees,sankeySVG,treemapSVG,netWorthSeries,homeLayout,openLayoutSheet,openRecurringSheet,switchTab,sheetBack,sheetDone,burnUpSVG,heatmapHTML,weekdayProfile,stackedBarsSVG,get SHEETS(){return SHEETS;},donutSVG,ringSVG,groupedBarsSVG,lineChartSVG,get IMP(){return IMP;},set IMP(v){IMP=v;}}};
+window.Ledger={S,fn:{parseCSV,parseDate,parseAmount,detectTable,guessMapping,parseImportRows,runImport,rollbackImport,loadImportText,openImporter,renderPreview,upsertTxns,deleteTxn,setBudget,monthTotals,spentFor,spentTop,spentLeaf,effectiveLimit,projectionFor,insights,accountBalance,backupJSON,restoreData,applyRules,cleanPayee,render,openTxnSheet,saveTxnForm,openAccountSheet,openCategoriesList,openCategorySheet,openCatDetail,setMeta,openFuelSheet,openFuelSettings,fuelStats,consumption,consumptionSeries,drivingPace,serviceForecast,fuelCatId,topCats,childrenOf,statusOf,periodMonths,periodLabel,leafMapFor,topMapFor,totalsFor,payeesFor,openPayeeDetail,openDayDetail,openGeneralDetail,ask,partsOf,rollFor,availableLimit,transactionsCSV,fuelCSV,mainAccount,periodOf,periodStart,periodEnd,periodDays,dayInPeriod,curPeriod,askText,setPin,verifyPin,lockNow,tryPin,encryptText,decryptText,newPinFlow,removePinFlow,parseFuelText,openFuelPaste,openFuelMenu,showTip,hideTip,limitStatusFor,limitedTotals,generateScheduled,runScheduled,nextScheduledDate,openScheduleSheet,limitFor,limitSince,recurringPayees,sankeySVG,treemapSVG,netWorthSeries,homeLayout,openLayoutSheet,openRecurringSheet,switchTab,sheetBack,sheetDone,burnUpSVG,heatmapHTML,weekdayProfile,stackedBarsSVG,get SHEETS(){return SHEETS;},donutSVG,ringSVG,groupedBarsSVG,lineChartSVG,get IMP(){return IMP;},set IMP(v){IMP=v;}}};
 window.LedgerReady=init().catch(e=>{console.error(e);$('#view').innerHTML=`<p class="empty bad">Ledger couldn't open its storage: ${esc(e.message||e)}. Try a different browser, or check that private browsing is off.</p>`;});
 </script>
 </body>

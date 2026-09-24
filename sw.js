@@ -1,5 +1,5 @@
 /* Ledger service worker: caches the app shell so it opens offline. Bump CACHE when you ship a new version. */
-const CACHE = 'ledger-v17';
+const CACHE = 'ledger-v20';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/maskable-512.png'];
 
 self.addEventListener('install', e => {
