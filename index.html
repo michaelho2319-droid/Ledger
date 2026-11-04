@@ -340,7 +340,7 @@ table.prev{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
 
 <script>
 'use strict';
-const APP_VERSION='1.3.0';
+const APP_VERSION='1.4.0';
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 
@@ -829,24 +829,35 @@ function stackedBarsSVG(months,series,{height=190}={}){
   months.forEach((m,i)=>{const cx=padL+iw*i+iw/2;let acc=0;for(const sr of series){const v=Math.max(0,sr.values[i]||0);if(!v)continue;const y1=y(acc+v),y0=y(acc);bars+=`<rect x="${(cx-bw/2).toFixed(1)}" y="${y1.toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(0.5,y0-y1).toFixed(1)}" style="fill:${sr.color}" data-act="cat-detail" data-id="${esc(sr.id||'')}"><title>${esc(sr.name)}, ${monthShort(m)}: ${fmt(v)}</title></rect>`;acc+=v;}if(i===n-1||(i%every===0&&n-1-i>=every))bars+=`<text x="${cx.toFixed(1)}" y="${H-6}" text-anchor="middle" class="ax">${monthShort(m)}</text>`;});
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">${g}${bars}</svg>`;
 }
+function pacePrev(mk){return [1,2,3].map(i=>shiftMonth(mk,-i)).filter(k=>monthTotals(k).spent>0);}
 function burnUpSVG(mk){
   const dim=periodDays(mk);const today=todayStr(),cur=curPeriod();const tday=mk===cur?dayInPeriod(today):(mk<cur?dim:0);
-  const prevMk=shiftMonth(mk,-1);const pdim=periodDays(prevMk);const s0=periodStart(mk),ps0=periodStart(prevMk);
-  const daily=new Array(dim+2).fill(0),pdaily=new Array(pdim+2).fill(0);
-  for(const t of live()){if(!isSpend(t))continue;const pk=periodOf(t.date);if(pk===mk)daily[daysBetween(s0,t.date)+1]-=t.amount;else if(pk===prevMk)pdaily[daysBetween(ps0,t.date)+1]-=t.amount;}
+  const s0=periodStart(mk);
+  const prevKeys=pacePrev(mk);const pdim=prevKeys.map(periodDays);const ps0=prevKeys.map(periodStart);
+  const daily=new Array(dim+2).fill(0);const pdaily=prevKeys.map((k,j)=>new Array(pdim[j]+2).fill(0));
+  for(const t of live()){if(!isSpend(t))continue;const pk=periodOf(t.date);
+    if(pk===mk)daily[daysBetween(s0,t.date)+1]-=t.amount;
+    else{const j=prevKeys.indexOf(pk);if(j>=0)pdaily[j][daysBetween(ps0[j],t.date)+1]-=t.amount;}}
   const cum=[0];for(let d=1;d<=dim;d++)cum.push(cum[d-1]+daily[d]);
-  const pcum=[0];for(let d=1;d<=pdim;d++)pcum.push(pcum[d-1]+pdaily[d]);
-  if(!cum[dim]&&!pcum[pdim])return '';
+  // each earlier month is stretched onto this month's day grid so months of different lengths line up
+  const samp=pdaily.map((arr,j)=>{const c=[0];for(let d=1;d<=pdim[j];d++)c.push(c[d-1]+arr[d]);
+    const o=[];for(let d=0;d<=dim;d++){const q=d/dim*pdim[j],a=Math.floor(q),b=Math.min(pdim[j],a+1);o.push(c[a]+(c[b]-c[a])*(q-a));}return o;});
+  const avg=samp.length?Array.from({length:dim+1},(_,d)=>samp.reduce((a,s)=>a+s[d],0)/samp.length):null;
+  const lo=samp.length>1?Array.from({length:dim+1},(_,d)=>Math.min(...samp.map(s=>s[d]))):null;
+  const hi=samp.length>1?Array.from({length:dim+1},(_,d)=>Math.max(...samp.map(s=>s[d]))):null;
+  if(!cum[dim]&&!avg)return '';
   const lim=totalLimit(mk);const pr=projectionFor(mk);const proj=pr&&!pr.final&&pr.elapsed>=3?pr.projected:0;
   const W=360,H=170,padL=40,padR=12,padT=12,padB=22;
-  const max=Math.max(1,cum[Math.min(tday,dim)],pcum[pdim],lim,proj);const step=niceStep(max);const top=Math.ceil(max/step)*step;
+  const max=Math.max(1,cum[Math.min(tday,dim)],avg?avg[dim]:0,hi?hi[dim]:0,lim,proj);const step=niceStep(max);const top=Math.ceil(max/step)*step;
   const x=d=>padL+(W-padL-padR)*d/dim;const y=v=>padT+(H-padT-padB)*(1-Math.min(v,top)/top);
   let g='';for(let v=0;v<=top+1e-9;v+=step)g+=`<line x1="${padL}" x2="${W-padR}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" class="grid"/><text x="${padL-4}" y="${(y(v)+3.5).toFixed(1)}" text-anchor="end" class="ax">${fmtAxis(v)}</text>`;
   const line=(arr,upto)=>{let d='';for(let i=0;i<=upto;i++)d+=(i?'L':'M')+x(i).toFixed(1)+' '+y(arr[i]).toFixed(1);return d;};
   let out='';
-  if(pcum[pdim])out+=`<path d="${line(pcum,Math.min(pdim,dim))}" fill="none" style="stroke:var(--ink-3)" stroke-width="1.6" opacity=".6" data-tip="${monthName(prevMk)} ended at ${fmt(pcum[pdim])}"><title>${monthName(prevMk)} ended at ${fmt(pcum[pdim])}</title></path>`;
+  if(lo&&hi){let d=line(hi,dim);for(let i=dim;i>=0;i--)d+='L'+x(i).toFixed(1)+' '+y(lo[i]).toFixed(1);d+='Z';
+    out+=`<path d="${d}" style="fill:var(--ink-3)" opacity=".16" data-tip="The last ${prevKeys.length} months ran between ${fmt(lo[dim])} and ${fmt(hi[dim])} by month end"><title>Range of the last ${prevKeys.length} months</title></path>`;}
+  if(avg)out+=`<path d="${line(avg,dim)}" fill="none" style="stroke:var(--ink-3)" stroke-width="1.6" opacity=".75" stroke-dasharray="${prevKeys.length>1?'0':'4 3'}" data-tip="${prevKeys.length>1?`Average of ${prevKeys.length} months`:monthName(prevKeys[0])}: ${fmt(avg[dim])} by month end"><title>${prevKeys.length>1?`${prevKeys.length}-month average`:monthName(prevKeys[0])} ended at ${fmt(avg[dim])}</title></path>`;
   if(lim)out+=`<line x1="${x(0)}" y1="${y(0).toFixed(1)}" x2="${x(dim).toFixed(1)}" y2="${y(lim).toFixed(1)}" style="stroke:var(--green)" stroke-width="1.4" stroke-dasharray="5 3" data-tip="Even pace to the ${fmtShort(lim)} limit"><title>Even pace to the ${fmtShort(lim)} limit</title></line>`;
-  if(tday>0)out+=`<path d="${line(cum,tday)}" fill="none" style="stroke:var(--ink)" stroke-width="2.4" stroke-linejoin="round"><title>Spent so far ${fmt(cum[tday])}</title></path><g class="pt" data-tip="Day ${tday}: ${fmt(cum[tday])} so far"><circle class="dot" cx="${x(tday).toFixed(1)}" cy="${y(cum[tday]).toFixed(1)}" r="3.5" style="fill:var(--ink)"/><circle class="hit" cx="${x(tday).toFixed(1)}" cy="${y(cum[tday]).toFixed(1)}" r="14" fill="transparent"/></g>`;
+  if(tday>0)out+=`<path d="${line(cum,tday)}" fill="none" style="stroke:var(--ink)" stroke-width="2.4" stroke-linejoin="round"><title>Spent so far ${fmt(cum[tday])}</title></path><g class="pt" data-tip="Day ${tday}: ${fmt(cum[tday])} so far${avg?`, against ${fmt(avg[tday])} by now on average`:''}"><circle class="dot" cx="${x(tday).toFixed(1)}" cy="${y(cum[tday]).toFixed(1)}" r="3.5" style="fill:var(--ink)"/><circle class="hit" cx="${x(tday).toFixed(1)}" cy="${y(cum[tday]).toFixed(1)}" r="14" fill="transparent"/></g>`;
   if(proj&&tday<dim)out+=`<line x1="${x(tday).toFixed(1)}" y1="${y(cum[tday]).toFixed(1)}" x2="${x(dim).toFixed(1)}" y2="${y(proj).toFixed(1)}" style="stroke:var(--amber)" stroke-width="2" stroke-dasharray="4 3" data-tip="Projected month end: ${fmt(proj)}"><title>Projected ${fmt(proj)}</title></line><g class="pt" data-tip="Projected month end: ${fmt(proj)}"><circle class="dot" cx="${x(dim).toFixed(1)}" cy="${y(proj).toFixed(1)}" r="3" style="fill:var(--amber)"/><circle class="hit" cx="${x(dim).toFixed(1)}" cy="${y(proj).toFixed(1)}" r="14" fill="transparent"/></g>`;
   if(tday>0&&tday<dim)out+=`<line x1="${x(tday).toFixed(1)}" x2="${x(tday).toFixed(1)}" y1="${padT}" y2="${(H-padB).toFixed(1)}" style="stroke:var(--margin)" stroke-width="1" opacity=".7"/>`;
   let lx='';for(const d of [1,8,15,22,dim])lx+=`<text x="${x(d).toFixed(1)}" y="${H-6}" text-anchor="${d===dim?'end':d===1?'start':'middle'}" class="ax">${periodStartDay()===1?d:dateLabel(addDays(s0,d-1))}</text>`;
@@ -952,7 +963,8 @@ function viewHome(){
   const ins=insights(mk);
   const insHTML=ins.length?sec('insights','What stands out','',ins.map(i=>{const act=i.id?`data-act="cat-detail" data-id="${i.id}"`:i.tab?`data-act="tab" data-tab="${i.tab}"`:'';const tag=act?'button':'div';return `<${tag} class="insight ${i.tone}" ${act}><i></i><span>${esc(i.text)}</span></${tag}>`;}).join('')):'';
   const burn=burnUpSVG(mk);
-  const pace=burn?sec('pace','Pace',monthName(mk),`${burn}<div class="legend"><span><i style="background:var(--ink)"></i>This month</span><span><i style="background:var(--ink-3);opacity:.6"></i>${monthName(shiftMonth(mk,-1))}</span>${tot.budgeted?'<span><i class="p" style="border-color:var(--green)"></i>Limit at even pace</span>':''}${mid&&mk===cur?'<span><i class="p" style="border-color:var(--amber)"></i>Projected</span>':''}</div><p class="note">Above the dashed line means you're spending faster than the limit allows; below it, slower.</p>`):'';
+  const pacePrevKeys=pacePrev(mk);
+  const pace=burn?sec('pace','Pace',monthName(mk),`${burn}<div class="legend"><span><i style="background:var(--ink)"></i>${monthName(mk)}</span>${pacePrevKeys.length?`<span><i style="background:var(--ink-3);opacity:.75"></i>${pacePrevKeys.length>1?`Last ${pacePrevKeys.length} months, average`:monthName(pacePrevKeys[0])}</span>`:''}${pacePrevKeys.length>1?`<span><i style="background:var(--ink-3);opacity:.3"></i>Their range</span>`:''}${tot.budgeted?'<span><i class="p" style="border-color:var(--green)"></i>Limit at even pace</span>':''}${mid&&mk===cur?'<span><i class="p" style="border-color:var(--amber)"></i>Projected</span>':''}</div><p class="note">The grey line is what you had spent by the same point in an average of the last ${pacePrevKeys.length} month${pacePrevKeys.length===1?'':'s'}${pacePrevKeys.length>1?', and the shaded band is the best and worst of them':''}. Shorter months are stretched to fit, so the days line up.${tot.budgeted?" Above the green dashed line means you're spending faster than the limit allows; below it, slower.":''}</p>`):'';
   const limited=ownLimitCats(mk);
   const chips=limited.length?sec('limits','Limits',monthName(mk),`<div class="chips">${limited.map(c=>{const l=availableLimit(c.id,mk).amount,sp=spentFor(c.id,mk);const st=statusOf(sp,l);return `<button class="chip ${st}" data-act="cat-detail" data-id="${c.id}"><i class="swatch" style="background:${colorOf(c.id)}"></i>${catIcon(c.id)}${esc(c.name)} <b>${Math.round(sp/l*100)}%</b></button>`;}).join('')}</div>`):'';
   const schedNames=new Set(S.schedules.filter(sc=>sc.active).map(sc=>normText(sc.payee)));
@@ -1176,6 +1188,42 @@ function viewBudget(){
 
 /* ================= Fuel ================= */
 const fuelLive=()=>S.fuel.filter(f=>!f.deletedAt).sort((a,b)=>a.date.localeCompare(b.date)||a.odometer-b.odometer);
+/* South African fuel prices change at midnight on the first Wednesday of the month,
+   so a fuel price period runs from one first Wednesday to the day before the next. */
+function firstWedOf(y,m){const d=new Date(y,m-1,1);d.setDate(1+((3-d.getDay()+7)%7));return ymd(d);}
+function fuelPeriodOf(ds){const y=+ds.slice(0,4),m=+ds.slice(5,7);const fw=firstWedOf(y,m);return ds>=fw?fw:firstWedOf(m===1?y-1:y,m===1?12:m-1);}
+function fuelPeriodNext(start){const y=+start.slice(0,4),m=+start.slice(5,7);return firstWedOf(m===12?y+1:y,m===12?1:m+1);}
+function fuelPeriodEnd(start){return addDays(fuelPeriodNext(start),-1);}
+function fuelPeriodLabel(start){const e=fuelPeriodEnd(start);return `${dateLabel(start)} to ${dateLabel(e)}${start.slice(0,4)!==todayStr().slice(0,4)?' '+e.slice(0,4):''}`;}
+function fuelPrices(){return S.meta.fuelPrices||{};}
+function fuelPriceFor(ds){const v=fuelPrices()[fuelPeriodOf(ds)];return v==null?null:v;}
+function fuelPaidIn(start){const end=fuelPeriodNext(start);let c=0,l=0;for(const f of fuelLive())if(f.date>=start&&f.date<end){c+=f.cost;l+=f.litres;}return l?c/l:null;}
+function fuelPeriodList(){
+  const list=fuelLive();const cur=fuelPeriodOf(todayStr());
+  let k=list.length?fuelPeriodOf(list[0].date):cur;const out=[];
+  while(k<=cur&&out.length<60){out.push(k);k=fuelPeriodNext(k);}
+  for(const x of Object.keys(fuelPrices()))if(!out.includes(x))out.push(x);
+  return out.sort().reverse();
+}
+function openFuelPriceSheet(){
+  const P=fuelPrices();const cur=fuelPeriodOf(todayStr());const all=fuelPeriodList();const shown=all.slice(0,14);
+  const row=k=>{const paid=fuelPaidIn(k),set=P[k];
+    return `<div class="field"><label for="fx_${k}">${fuelPeriodLabel(k)}${k===cur?' &middot; now':''}</label>
+      <input id="fx_${k}" data-fx="${k}" inputmode="decimal" placeholder="${paid!=null?fmtNum(paid/100,2):'0,00'}" value="${set!=null?(set/100).toFixed(2).replace('.',','):''}">
+      <span class="note">${paid!=null?`you paid ${fmtNum(paid/100,2)} a litre${set!=null&&Math.abs(paid-set)>1?`, ${fmtNum(Math.abs(paid-set)/100,2)} ${paid>set?'more':'less'} than the price set here`:''}`:'no fill-ups in this period'}</span></div>`;};
+  const html=`<p class="note">The pump price changes at midnight on the first Wednesday of each month, so each period below runs from one first Wednesday to the day before the next. Set the price once and every fill-up you log in that period starts with it already filled in; you can still type over it at the pump.</p>
+    <div class="actions"><button class="btn" id="fxFill">Fill from what I paid</button><button class="btn" id="fxClear">Clear all</button></div>
+    ${shown.map(row).join('')}
+    ${all.length>shown.length?`<p class="note">Showing the last ${shown.length} periods of ${all.length}.</p>`:''}`;
+  openSheet('Fuel price',html,`<button class="btn primary" id="fxSave">Save</button>`,{key:'fuelprice',reopen:()=>openFuelPriceSheet()});
+  $('#fxFill').onclick=()=>{let n=0;$$('[data-fx]').forEach(i=>{if(i.value.trim())return;const paid=fuelPaidIn(da(i,'fx'));if(paid!=null){i.value=fmtNum(paid/100,2);n++;}});toast(n?`${n} period${n===1?'':'s'} filled in`:'Nothing to fill in');};
+  $('#fxClear').onclick=()=>{$$('[data-fx]').forEach(i=>i.value='');};
+  $('#fxSave').onclick=async()=>{
+    const next=Object.assign({},P);
+    $$('[data-fx]').forEach(i=>{const k=da(i,'fx');const v=parseAmountInput(i.value);if(v!=null&&v>0)next[k]=Math.round(v);else delete next[k];});
+    await setMeta('fuelPrices',next);sheetDone();render();toast('Fuel prices saved');
+  };
+}
 function fuelStats(mk){
   const list=fuelLive();let km=0,litres=0,cost=0,n=0;
   for(let i=0;i<list.length;i++){const f=list[i];if(periodOf(f.date)!==mk)continue;n++;cost+=f.cost;litres+=f.litres;if(i>0&&f.odometer>list[i-1].odometer)km+=f.odometer-list[i-1].odometer;}
@@ -1251,8 +1299,14 @@ function viewFuel(){
   const stats=months.map(m=>({m,...fuelStats(m)}));
   const fcol=colorOf(fuelCatId());const consSeg=consumptionSeries().slice(-12);
   const consVals=consSeg.map(x=>kml?x.km/x.litres:x.litres/x.km*100);
-  const consTips=consSeg.map(x=>`${dateLabel(x.from)} to ${dateLabel(x.date)}: ${fmtNum(x.litres,3)} L over ${Math.round(x.km).toLocaleString('en-ZA')} km = ${fmtNum(x.litres/x.km*100,3)} L/100km, ${fmtNum(x.km/x.litres,3)} km/L${x.fills>1?` (${x.fills} fill-ups)`:''}`);
-  const charts=sec('fuelprice','Price per litre','what you paid, monthly average',lineChartSVG(months.map(monthShort),[{name:'R per litre',color:fcol,values:stats.map(x=>x.ppl?x.ppl/100:null)}],{unit:'dec2',height:140})||'<p class="note">Needs fill-ups in more than one month.</p>')+(consSeg.length>1?sec('fuelcons','Consumption',`${kml?'km/L':'L/100km'} between full tanks, tap a point for the exact figures`,lineChartSVG(consSeg.map(x=>Number(x.date.slice(8))+'/'+Number(x.date.slice(5,7))),[{name:kml?'km/L':'L/100km',color:fcol,values:consVals}],{unit:kml?'dec1':'dec1',height:140,tips:consTips,avg:consVals.reduce((a,v)=>a+v,0)/consVals.length})):'');
+  const consTips=consSeg.map(x=>`${dateLabel(x.date)}: ${fmtNum(x.litres/x.km*100,3)} L/100km, ${fmtNum(x.km/x.litres,3)} km/L`);
+  const priceMonths=periodMonths(mk,6);const priceStats=priceMonths.map(m=>fuelStats(m));
+  const setLine=priceMonths.map(m=>{const v=fuelPrices()[fuelPeriodOf(m+'-15')];return v?v/100:null;});
+  const hasSet=setLine.some(v=>v!=null);
+  const priceSeries=[{name:'Paid',color:fcol,values:priceStats.map(x=>x.ppl?x.ppl/100:null)}];
+  if(hasSet)priceSeries.unshift({name:'Set',color:'var(--ink-3)',values:setLine});
+  const priceLegend=hasSet?`<div class="legend"><span><i style="background:${fcol}"></i>What you paid, monthly average</span><span><i style="background:var(--ink-3)"></i>The price set for the period</span></div>`:'';
+  const charts=sec('fuelprice','Price per litre','the last six months',lineChartSVG(priceMonths.map(monthShort),priceSeries,{unit:'dec2',height:140})+priceLegend||'<p class="note">Needs fill-ups in more than one month.</p>')+(consSeg.length>1?sec('fuelcons','Consumption',`${kml?'km/L':'L/100km'} between full tanks, tap a point for both units to 3 decimals`,lineChartSVG(consSeg.map(x=>Number(x.date.slice(8))+'/'+Number(x.date.slice(5,7))),[{name:kml?'km/L':'L/100km',color:fcol,values:consVals}],{unit:kml?'dec1':'dec1',height:140,tips:consTips,avg:consVals.reduce((a,v)=>a+v,0)/consVals.length})):'');
   const table=`${charts}<div class="section"><h3>Spend by month<small>${periodLabel(mk)}</small></h3>${periodBar()}${months.length>1?groupedBarsSVG(months,[{name:'Fuel',color:fcol,values:stats.map(x=>x.cost)}],{height:150}):''}<table class="cmp"><thead><tr><th>Month</th><th>km</th><th>Litres</th><th>R/L</th><th>Spend</th></tr></thead><tbody>${stats.filter(s=>s.n).map(s=>`<tr><td>${monthShort(s.m)}</td><td>${Math.round(s.km).toLocaleString('en-ZA')}</td><td>${fmtNum(s.litres,1)}</td><td>${s.ppl?fmtNum(s.ppl/100,2):'—'}</td><td>${fmtShort(s.cost)}</td></tr>`).join('')}</tbody>${stats.filter(s=>s.n).length>1?`<tfoot><tr><td>Total</td><td>${Math.round(stats.reduce((a,s)=>a+s.km,0)).toLocaleString('en-ZA')}</td><td>${fmtNum(stats.reduce((a,s)=>a+s.litres,0),1)}</td><td>—</td><td>${fmtShort(stats.reduce((a,s)=>a+s.cost,0))}</td></tr></tfoot>`:''}</table></div>`;
   const rows=[...list].reverse().slice(0,40).map(f=>{const idx=list.indexOf(f);const prevF=idx>0?list[idx-1]:null;const km=prevF?f.odometer-prevF.odometer:null;return `<button class="item" data-act="fuel-edit" data-id="${f.id}"><span>${esc(f.station||'Fill-up')}<span class="sub">${dateLabel(f.date)}, ${fmtKm(f.odometer)}${km!=null?` (+${Math.round(km)} km)`:''}, ${fmtNum(f.litres,1)} L at ${fmtNum(f.pricePerL/100,2)}${f.full?'':', partial'}</span></span><span class="amt">${fmt(f.cost)}</span></button>`;}).join('');
   return `${head}${hero}${tiles}${table}<div class="section"><h3>Fill-ups</h3>${rows}</div>`;
@@ -1341,7 +1395,7 @@ function openFuelSheet(id){
   const stations=[...new Set(S.fuel.map(f=>f.station).filter(Boolean))];
   const defAcc=ex?(S.transactions.find(t=>t.id===ex.transactionId)?.accountId||S.meta.lastAccountId):(accById(S.meta.lastAccountId)?S.meta.lastAccountId:S.accounts[0].id);
   const html=`<div class="row2"><div class="field"><label for="fuDate">Date</label><input id="fuDate" type="date" value="${ex?.date||todayStr()}"></div><div class="field"><label for="fuOdo">Odometer (km)</label><input id="fuOdo" inputmode="numeric" placeholder="${lastOdo?lastOdo:'e.g. 84250'}" value="${ex?ex.odometer:''}"></div></div>
-    <div class="row2"><div class="field"><label for="fuP">Price per litre (R)</label><input id="fuP" inputmode="decimal" placeholder="${lastPrice?fmtNum(lastPrice/100,2):'0,00'}" value="${ex?(ex.pricePerL/100).toFixed(2).replace('.',','):''}"></div><div class="field"><label for="fuL">Litres</label><input id="fuL" inputmode="decimal" placeholder="0,00" value="${ex?String(ex.litres).replace('.',','):''}"></div></div>
+    <div class="row2"><div class="field"><label for="fuP">Price per litre (R)</label><input id="fuP" inputmode="decimal" placeholder="${lastPrice?fmtNum(lastPrice/100,2):'0,00'}" value="${ex?(ex.pricePerL/100).toFixed(2).replace('.',','):''}"><span class="note" id="fuPNote"></span></div><div class="field"><label for="fuL">Litres</label><input id="fuL" inputmode="decimal" placeholder="0,00" value="${ex?String(ex.litres).replace('.',','):''}"></div></div>
     <div class="calc"><span class="cl">Total</span><span class="cv" id="fuTotal">—</span><span class="cw" id="fuCalc">Type the price per litre and the litres, in whichever order suits you. The pump's total is worked out for you.</span></div>
     <div class="row2"><div class="field"><label for="fuSt">Station</label><input id="fuSt" list="stations" autocomplete="off" placeholder="e.g. Engen Fourways" value="${esc(ex?.station||'')}"><datalist id="stations">${stations.map(s=>`<option value="${esc(s)}">`).join('')}</datalist></div><div class="field"><label for="fuAcc">Paid from</label><select id="fuAcc">${accOptions(defAcc)}</select></div></div>
     <div class="field"><label class="chk"><input type="checkbox" id="fuFull" ${ex?(ex.full?'checked':''):'checked'}>Filled the tank</label></div>
@@ -1354,7 +1408,14 @@ function openFuelSheet(id){
   const draw=()=>{const c=totalCents();const l=L(),p=P();
     $('#fuTotal').textContent=c==null?'—':fmt(c);
     $('#fuCalc').textContent=c!=null?`${fmtNum(l,2)} L at ${fmtNum(p/100,2)} a litre`:(l>0&&!(p>0))?'Now the price per litre.':(p>0&&!(l>0))?'Now the litres.':'Type the price per litre and the litres, in whichever order suits you. The pump\'s total is worked out for you.';};
-  $('#fuP').oninput=draw;$('#fuL').oninput=draw;draw();
+  // the price set for the fuel period fills itself in until you type over it
+  let priceTyped=!!ex;
+  const schedule=()=>{const d=$('#fuDate').value||todayStr();const sp=fuelPriceFor(d);
+    $('#fuPNote').textContent=sp!=null?`${fmtNum(sp/100,2)} set from ${dateLabel(fuelPeriodOf(d))}`:'No price set for this period.';
+    if(!priceTyped){$('#fuP').value=sp!=null?fmtNum(sp/100,2):'';}
+    draw();};
+  $('#fuP').oninput=()=>{priceTyped=$('#fuP').value.trim()!=='';draw();};
+  $('#fuL').oninput=draw;$('#fuDate').onchange=schedule;schedule();
   $('#fuSave').onclick=async()=>{
     const odo=parseNum($('#fuOdo').value),litres=L(),price=P();
     if(!odo||odo<=0){toast('Enter the odometer reading');$('#fuOdo').focus();return;}
@@ -1382,7 +1443,7 @@ function openFuelSheet(id){
 }
 function openFuelMenu(){
   const fs=S.meta.fuel||{};
-  openSheet('Fuel',`<div class="menu"><button class="item" data-act="fuel-add"><span>Log a fill-up<span class="sub">Odometer, litres and cost</span></span><span class="chev">›</span></button><button class="item" data-act="fuel-paste"><span>Paste fill-ups<span class="sub">Import notes you've kept as messages</span></span><span class="chev">›</span></button><button class="item" data-act="fuel-settings"><span>Vehicle and service<span class="sub">${fs.vehicle?esc(fs.vehicle)+', ':''}last service ${fs.lastServiceKm!=null?fmtKm(fs.lastServiceKm):'not set'}, every ${fmtKm(fs.intervalKm||15000)}</span></span><span class="chev">›</span></button></div>`,`<button class="btn" data-act="close-sheet">Close</button>`,{key:'fuelmenu',reopen:()=>openFuelMenu()});
+  openSheet('Fuel',`<div class="menu"><button class="item" data-act="fuel-add"><span>Log a fill-up<span class="sub">Odometer, litres and cost</span></span><span class="chev">›</span></button><button class="item" data-act="fuel-paste"><span>Paste fill-ups<span class="sub">Import notes you've kept as messages</span></span><span class="chev">›</span></button><button class="item" data-act="fuel-price"><span>Fuel price<span class="sub">${(()=>{const v=fuelPriceFor(todayStr());return v!=null?`${fmtNum(v/100,2)} a litre, ${fuelPeriodLabel(fuelPeriodOf(todayStr()))}`:'not set for this period';})()}</span></span><span class="chev">›</span></button><button class="item" data-act="fuel-settings"><span>Vehicle and service<span class="sub">${fs.vehicle?esc(fs.vehicle)+', ':''}last service ${fs.lastServiceKm!=null?fmtKm(fs.lastServiceKm):'not set'}, every ${fmtKm(fs.intervalKm||15000)}</span></span><span class="chev">›</span></button></div>`,`<button class="btn" data-act="close-sheet">Close</button>`,{key:'fuelmenu',reopen:()=>openFuelMenu()});
 }
 function openFuelSettings(){
   const fs=S.meta.fuel||{};
@@ -1485,6 +1546,7 @@ const ACTIONS={
   'fuel-edit':el=>openFuelSheet(da(el,'id')),
   'fuel-settings':()=>openFuelSettings(),
   'fuel-paste':()=>openFuelPaste(),
+  'fuel-price':()=>openFuelPriceSheet(),
   'fuel-menu':()=>openFuelMenu(),
   'cons-unit':async()=>{await setMeta('consUnit',S.meta.consUnit==='kml'?'l100':'kml');render();},
   'share-app':async()=>{const url=location.origin+location.pathname;const text='Ledger, a budgeting app that keeps everything on your own phone. Open this on your phone in Chrome and choose Install app:';try{if(navigator.share){await navigator.share({title:'Ledger',text,url});return;}}catch(e){if(e&&e.name==='AbortError')return;}try{await navigator.clipboard.writeText(url);toast('Link copied');}catch{toast(url,{duration:8000});}},
@@ -2036,7 +2098,7 @@ async function init(){
   }
 }
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;if(S.tab==='more')render();});
-window.Ledger={S,fn:{parseCSV,parseDate,parseAmount,detectTable,guessMapping,parseImportRows,runImport,rollbackImport,loadImportText,openImporter,renderPreview,upsertTxns,deleteTxn,setBudget,monthTotals,spentFor,spentTop,spentLeaf,effectiveLimit,projectionFor,insights,accountBalance,backupJSON,restoreData,applyRules,cleanPayee,render,openTxnSheet,saveTxnForm,openAccountSheet,openCategoriesList,openCategorySheet,openCatDetail,setMeta,openFuelSheet,openFuelSettings,fuelStats,consumption,consumptionSeries,drivingPace,serviceForecast,fuelCatId,topCats,childrenOf,statusOf,periodMonths,periodLabel,leafMapFor,topMapFor,totalsFor,payeesFor,openPayeeDetail,openDayDetail,openGeneralDetail,ask,partsOf,rollFor,availableLimit,transactionsCSV,fuelCSV,mainAccount,periodOf,periodStart,periodEnd,periodDays,dayInPeriod,curPeriod,askText,setPin,verifyPin,lockNow,tryPin,encryptText,decryptText,newPinFlow,removePinFlow,parseFuelText,openFuelPaste,openFuelMenu,addMonthsDate,spanText,dateWithYear,showTip,hideTip,limitStatusFor,limitedTotals,generateScheduled,runScheduled,nextScheduledDate,openScheduleSheet,limitFor,limitSince,recurringPayees,sankeySVG,treemapSVG,netWorthSeries,homeLayout,openLayoutSheet,openRecurringSheet,switchTab,sheetBack,sheetDone,burnUpSVG,heatmapHTML,weekdayProfile,stackedBarsSVG,get SHEETS(){return SHEETS;},donutSVG,ringSVG,groupedBarsSVG,lineChartSVG,get IMP(){return IMP;},set IMP(v){IMP=v;}}};
+window.Ledger={S,fn:{parseCSV,parseDate,parseAmount,detectTable,guessMapping,parseImportRows,runImport,rollbackImport,loadImportText,openImporter,renderPreview,upsertTxns,deleteTxn,setBudget,monthTotals,spentFor,spentTop,spentLeaf,effectiveLimit,projectionFor,insights,accountBalance,backupJSON,restoreData,applyRules,cleanPayee,render,openTxnSheet,saveTxnForm,openAccountSheet,openCategoriesList,openCategorySheet,openCatDetail,setMeta,openFuelSheet,openFuelSettings,fuelStats,consumption,consumptionSeries,drivingPace,serviceForecast,fuelCatId,topCats,childrenOf,statusOf,periodMonths,periodLabel,leafMapFor,topMapFor,totalsFor,payeesFor,openPayeeDetail,openDayDetail,openGeneralDetail,ask,partsOf,rollFor,availableLimit,transactionsCSV,fuelCSV,mainAccount,periodOf,periodStart,periodEnd,periodDays,dayInPeriod,curPeriod,askText,setPin,verifyPin,lockNow,tryPin,encryptText,decryptText,newPinFlow,removePinFlow,parseFuelText,openFuelPaste,openFuelMenu,openFuelPriceSheet,firstWedOf,fuelPeriodOf,fuelPeriodNext,fuelPeriodEnd,fuelPeriodLabel,fuelPrices,fuelPriceFor,fuelPaidIn,fuelPeriodList,pacePrev,addMonthsDate,spanText,dateWithYear,showTip,hideTip,limitStatusFor,limitedTotals,generateScheduled,runScheduled,nextScheduledDate,openScheduleSheet,limitFor,limitSince,recurringPayees,sankeySVG,treemapSVG,netWorthSeries,homeLayout,openLayoutSheet,openRecurringSheet,switchTab,sheetBack,sheetDone,burnUpSVG,heatmapHTML,weekdayProfile,stackedBarsSVG,burnUpSVG,get SHEETS(){return SHEETS;},donutSVG,ringSVG,groupedBarsSVG,lineChartSVG,get IMP(){return IMP;},set IMP(v){IMP=v;}}};
 window.LedgerReady=init().catch(e=>{console.error(e);$('#view').innerHTML=`<p class="empty bad">Ledger couldn't open its storage: ${esc(e.message||e)}. Try a different browser, or check that private browsing is off.</p>`;});
 </script>
 </body>
