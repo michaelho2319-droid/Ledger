@@ -220,7 +220,7 @@ body.sheet-open{overflow:hidden}
 .chart [data-act],.chart [data-tip]{cursor:pointer}
 .chart g.sel circle.dot{r:5.5}
 .chart rect.sel,.chart path.sel{stroke:var(--ink);stroke-width:1.5}
-#tip{position:fixed;z-index:45;transform:translate(-50%,calc(-100% - 10px));background:var(--ink);color:var(--paper);padding:7px 10px;border-radius:8px;font-size:13px;white-space:nowrap;pointer-events:none;box-shadow:0 6px 18px rgba(0,0,0,.25);max-width:calc(100vw - 24px);overflow:hidden;text-overflow:ellipsis}
+#tip{position:fixed;z-index:45;transform:translate(-50%,calc(-100% - 10px));background:var(--ink);color:var(--paper);padding:7px 10px;border-radius:8px;font-size:13px;line-height:1.35;pointer-events:none;box-shadow:0 6px 18px rgba(0,0,0,.25);width:max-content;max-width:min(300px,calc(100vw - 24px));text-align:center}
 #tip::after{content:'';position:absolute;left:50%;bottom:-5px;width:10px;height:10px;background:var(--ink);transform:translateX(-50%) rotate(45deg)}
 .pagehead .opts{width:44px;height:44px;border-radius:22px;display:flex;align-items:center;justify-content:center;color:var(--ink-2);border:1px solid var(--rule-strong)}
 .pagehead .opts svg{width:22px;height:22px;fill:currentColor}
@@ -257,6 +257,8 @@ body.sheet-open{overflow:hidden}
 .krow .sub{color:var(--ink-3);font-size:12.5px;margin-left:8px;font-weight:400}
 .tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
 .tile{padding:10px 12px;border:1px solid var(--rule);border-radius:10px;min-width:0}
+button.tile{background:none;font:inherit;color:inherit;text-align:left;width:100%;cursor:pointer}
+.tile .l .sw{color:var(--green);font-weight:600}
 .tile .v{font-size:clamp(16px,5.2vw,20px);font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tile .l{font-size:12.5px;color:var(--ink-2)}
 .tile .d{font-size:12px;margin-top:2px;font-variant-numeric:tabular-nums}
@@ -338,7 +340,7 @@ table.prev{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:6px}
 
 <script>
 'use strict';
-const APP_VERSION='1.2.1';
+const APP_VERSION='1.3.0';
 const $=(s,r=document)=>r.querySelector(s);
 const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
 
@@ -406,6 +408,9 @@ function dateLabelY(ds){const [y,m,d]=ds.split('-').map(Number);return new Date(
 function longDate(ds){const [y,m,d]=ds.split('-').map(Number);return new Date(y,m-1,d).toLocaleDateString('en-ZA',{day:'numeric',month:'long'});}
 function daysBetween(a,b){return Math.round((new Date(b+'T00:00:00')-new Date(a+'T00:00:00'))/86400000);}
 function addDays(ds,n){const d=new Date(ds+'T00:00:00');d.setDate(d.getDate()+n);return ymd(d);}
+function addMonthsDate(ds,n){const [y,m,d]=ds.split('-').map(Number);const dt=new Date(y,m-1+n,1);const last=new Date(dt.getFullYear(),dt.getMonth()+1,0).getDate();dt.setDate(Math.min(d,last));return ymd(dt);}
+function spanText(days){const a=Math.abs(Math.round(days));if(a<45)return a+' day'+(a===1?'':'s');const mo=Math.round(a/30.44);if(mo<18)return mo+' month'+(mo===1?'':'s');return fmtNum(a/365.25,1)+' years';}
+function dateWithYear(ds){return longDate(ds)+(ds.slice(0,4)!==todayStr().slice(0,4)?' '+ds.slice(0,4):'');}
 const fmtFull=new Intl.NumberFormat('en-ZA',{style:'currency',currency:'ZAR',minimumFractionDigits:2,maximumFractionDigits:2});
 const fmtRound=new Intl.NumberFormat('en-ZA',{style:'currency',currency:'ZAR',maximumFractionDigits:0});
 const fmt=c=>fmtFull.format((c||0)/100);
@@ -901,7 +906,7 @@ function weekdayProfile(months){
   return sums.map((v,i)=>counts[i]?Math.round(v/counts[i]):0);
 }
 
-function lineChartSVG(labels,series,{height=160,avg=null,unit='money'}={}){
+function lineChartSVG(labels,series,{height=160,avg=null,unit='money',tips=null}={}){
   const W=360,H=height,padL=40,padR=12,padT=14,padB=22,n=labels.length;
   const all=series.flatMap(x=>x.values).filter(v=>v!=null);if(!all.length)return '';
   const max=Math.max(1e-9,...all,avg||0);const lo=Math.min(0,...all);const step=niceStep(Math.max(max,-lo));const top=Math.ceil(max/step)*step;const bottom=lo<0?-Math.ceil(-lo/step)*step:0;
@@ -914,7 +919,7 @@ function lineChartSVG(labels,series,{height=160,avg=null,unit='money'}={}){
     const d=pts.map((p,i)=>(i?'L':'M')+p.x.toFixed(1)+' '+p.y.toFixed(1)).join(' ');
     const area=`${d} L${pts[pts.length-1].x.toFixed(1)} ${y(0).toFixed(1)} L${pts[0].x.toFixed(1)} ${y(0).toFixed(1)} Z`;
     const last=pts[pts.length-1];
-    paths+=`<path d="${area}" style="fill:${sr.color}" opacity=".12"/><path d="${d}" fill="none" style="stroke:${sr.color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>${pts.map(p=>`<g class="pt" data-tip="${esc(labels[p.i])}: ${fv(p.v)}"><circle class="dot" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" style="fill:${sr.color}"/><circle class="hit" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="14" fill="transparent"><title>${esc(labels[p.i])}: ${fv(p.v)}</title></circle></g>`).join('')}<text x="${last.x.toFixed(1)}" y="${(last.y-8).toFixed(1)}" text-anchor="${last.i===n-1?'end':'middle'}" class="pv">${fv(last.v)}</text>`;}
+    paths+=`<path d="${area}" style="fill:${sr.color}" opacity=".12"/><path d="${d}" fill="none" style="stroke:${sr.color}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>${pts.map(p=>{const tp=(tips&&tips[p.i])||`${labels[p.i]}: ${fv(p.v)}`;return `<g class="pt" data-tip="${esc(tp)}"><circle class="dot" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3" style="fill:${sr.color}"/><circle class="hit" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="14" fill="transparent"><title>${esc(tp)}</title></circle></g>`;}).join('')}<text x="${last.x.toFixed(1)}" y="${(last.y-8).toFixed(1)}" text-anchor="${last.i===n-1?'end':'middle'}" class="pv">${fv(last.v)}</text>`;}
   const avgL=avg?`<line x1="${padL}" x2="${W-padR}" y1="${y(avg).toFixed(1)}" y2="${y(avg).toFixed(1)}" style="stroke:var(--ink-2)" stroke-dasharray="4 3"/><text x="${padL+4}" y="${(y(avg)-4).toFixed(1)}" text-anchor="start" class="ax">avg ${fv(avg)}</text>`:'';
   return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img">${g}${avgL}${paths}${lx}</svg>`;
 }
@@ -1180,7 +1185,7 @@ function consumptionSeries(){
   const list=fuelLive();const segs=[];let lastFull=-1;
   for(let i=0;i<list.length;i++){
     if(!list[i].full)continue;
-    if(lastFull>=0){let litres=0;for(let j=lastFull+1;j<=i;j++)litres+=list[j].litres;const km=list[i].odometer-list[lastFull].odometer;if(km>0&&litres>0)segs.push({date:list[i].date,value:litres/km*100});}
+    if(lastFull>=0){let litres=0;for(let j=lastFull+1;j<=i;j++)litres+=list[j].litres;const km=list[i].odometer-list[lastFull].odometer;if(km>0&&litres>0)segs.push({date:list[i].date,from:list[lastFull].date,km,litres:Math.round(litres*1000)/1000,fills:i-lastFull,value:litres/km*100});}
     lastFull=i;
   }
   return segs;
@@ -1194,10 +1199,25 @@ function drivingPace(){
   return km>0?km/days:null;
 }
 function serviceForecast(){
-  const fs=S.meta.fuel||{};const list=fuelLive();if(!list.length||fs.lastServiceKm==null)return null;
-  const odo=list[list.length-1].odometer;const interval=fs.intervalKm||15000;const next=fs.lastServiceKm+interval;const remaining=next-odo;
-  const pace=drivingPace();const days=pace&&remaining>0?Math.round(remaining/pace):null;
-  return {next,remaining,pace,days,date:days!=null?addDays(todayStr(),days):null,progress:Math.min(1,Math.max(0,(odo-fs.lastServiceKm)/interval)),odo};
+  const fs=S.meta.fuel||{};const list=fuelLive();if(!list.length)return null;
+  const odo=list[list.length-1].odometer;const pace=drivingPace();const today=todayStr();
+  let km=null,time=null;
+  if(fs.lastServiceKm!=null){
+    const interval=fs.intervalKm||15000;const next=fs.lastServiceKm+interval;const remaining=next-odo;
+    const days=pace&&remaining>0?Math.round(remaining/pace):null;
+    km={next,interval,remaining,days,pace,date:days!=null?addDays(today,days):null,progress:Math.min(1,Math.max(0,(odo-fs.lastServiceKm)/interval))};
+  }
+  if(fs.lastServiceDate&&fs.intervalMonths>0){
+    const date=addMonthsDate(fs.lastServiceDate,fs.intervalMonths);
+    const span=Math.max(1,daysBetween(fs.lastServiceDate,date));const days=daysBetween(today,date);
+    time={date,days,months:fs.intervalMonths,since:daysBetween(fs.lastServiceDate,today),progress:Math.min(1,Math.max(0,(span-days)/span))};
+  }
+  if(!km&&!time)return null;
+  let due;
+  if(km&&time){const kd=km.remaining<=0?today:(km.date||'9999-12-31');due=time.date<=kd?'time':'km';}
+  else due=km?'km':'time';
+  const overdue=(km&&km.remaining<0)||(time&&time.days<0);
+  return {km,time,due,overdue,pace,odo,progress:Math.max(km?km.progress:0,time?time.progress:0)};
 }
 function viewFuel(){
   const fs=S.meta.fuel||{};const list=fuelLive();const mk=S.month;
@@ -1207,21 +1227,33 @@ function viewFuel(){
   const svc=serviceForecast();const last=list[list.length-1];
   let hero;
   if(svc){
-    const cls=svc.remaining<0?'over':svc.remaining<1500?'warn':'';
-    hero=`<section class="hero"><h1>${svc.remaining<0?`Service overdue by <span class="num">${fmtKm(-svc.remaining)}</span>`:`Service in <span class="num">${fmtKm(svc.remaining)}</span>`}</h1><div class="track"><div class="fill ${cls}" style="width:${(svc.progress*100).toFixed(1)}%"></div></div><p>${fs.vehicle?esc(fs.vehicle)+': ':''}next service at ${fmtKm(svc.next)}; odometer ${fmtKm(svc.odo)} on ${dateLabel(last.date)}.${svc.date&&svc.remaining>0?` At about ${Math.round(svc.pace)} km a day, expect it around ${longDate(svc.date)}.`:svc.remaining>0?' Log a few more fill-ups to get a date.':''}</p></section>`;
-  }else hero=`<section class="hero"><h1>Odometer <span class="num">${fmtKm(last.odometer)}</span></h1><p>Enter your last service reading under Vehicle and service to get a forecast for the next one.</p></section>`;
+    const K=svc.km,T=svc.time;
+    const cls=svc.overdue?'over':((K&&K.remaining>=0&&K.remaining<1500)||(T&&T.days>=0&&T.days<30))?'warn':'';
+    let h1;
+    if(svc.overdue)h1=K&&K.remaining<0&&(!T||T.days>=0)?`Service overdue by <span class="num">${fmtKm(-K.remaining)}</span>`:T&&T.days<0&&(!K||K.remaining>=0)?`Service overdue by <span class="num">${spanText(T.days)}</span>`:`Service <span class="num">overdue</span>`;
+    else h1=svc.due==='time'?`Service in <span class="num">${spanText(T.days)}</span>`:`Service in <span class="num">${fmtKm(K.remaining)}</span>`;
+    const bits=[];
+    if(K)bits.push(`By distance, next at ${fmtKm(K.next)}: ${K.remaining<0?`${fmtKm(-K.remaining)} past it`:`${fmtKm(K.remaining)} to go`}${K.date&&K.remaining>0?`, around ${dateWithYear(K.date)} at about ${Math.round(K.pace)} km a day`:''}.`);
+    if(T)bits.push(`By time, every ${T.months} month${T.months===1?'':'s'}: due ${dateWithYear(T.date)}, ${T.days<0?`${spanText(T.days)} past it`:`${spanText(T.days)} to go`}.`);
+    if(K&&T)bits.push(`${svc.due==='time'?'The time interval':'The distance'} comes first.`);
+    hero=`<section class="hero"><h1>${h1}</h1><div class="track"><div class="fill ${cls}" style="width:${(svc.progress*100).toFixed(1)}%"></div></div><p>${fs.vehicle?esc(fs.vehicle)+': ':''}odometer ${fmtKm(svc.odo)} on ${dateLabel(last.date)}. ${bits.join(' ')}${!T?' Add a last service date under Vehicle and service to watch the time interval too.':''}</p></section>`;
+  }else hero=`<section class="hero"><h1>Odometer <span class="num">${fmtKm(last.odometer)}</span></h1><p>Enter your last service reading, or the date of your last service, under Vehicle and service to get a forecast for the next one.</p></section>`;
   const now=fuelStats(mk),prev=fuelStats(shiftMonth(mk,-1));const cons=consumption();
+  const kml=S.meta.consUnit==='kml';
   const d=(a,b)=>{if(!b||!a)return '';const diff=a-b;if(!diff)return '';const up=diff>0;return `<div class="d ${up?'up':'down'}">${up?'▲':'▼'} ${Math.round(Math.abs(diff)/b*100)}% vs ${monthShort(shiftMonth(mk,-1))}</div>`;};
+  const consVal=cons?(kml?fmtNum(100/cons,2)+' km/L':fmtNum(cons,1)+' L/100km'):'—';
   const tiles=`<div class="tiles">
     <div class="tile"><div class="v">${fmtShort(now.cost)}</div><div class="l">Fuel spend, ${monthShort(mk)}</div>${d(now.cost,prev.cost)}</div>
     <div class="tile"><div class="v">${fmtKm(now.km)}</div><div class="l">Driven, ${monthShort(mk)}</div>${d(now.km,prev.km)}</div>
     <div class="tile"><div class="v">${now.ppl?fmt(now.ppl)+'/L':'—'}</div><div class="l">Average price paid</div>${d(now.ppl,prev.ppl)}</div>
-    <div class="tile"><div class="v">${cons?fmtNum(cons,1)+' L/100km':'—'}</div><div class="l">Consumption${now.costPerKm?`, ${fmt(now.costPerKm)}/km`:''}</div></div></div>`;
-  const pm=periodMonths(mk);const months=pm.length>6?pm.slice(-24):periodMonths(mk,6);
+    <button class="tile" data-act="cons-unit"><div class="v">${consVal}</div><div class="l">Consumption${now.costPerKm?`, ${fmt(now.costPerKm)}/km`:''} <span class="sw">tap for ${kml?'L/100km':'km/L'}</span></div></button></div>`;
+  const pm=periodMonths(mk);const months=pm.length>24?pm.slice(-24):pm;
   const stats=months.map(m=>({m,...fuelStats(m)}));
   const fcol=colorOf(fuelCatId());const consSeg=consumptionSeries().slice(-12);
-  const charts=sec('fuelprice','Price per litre','what you paid, monthly average',lineChartSVG(months.map(monthShort),[{name:'R per litre',color:fcol,values:stats.map(x=>x.ppl?x.ppl/100:null)}],{unit:'dec2',height:140})||'<p class="note">Needs fill-ups in more than one month.</p>')+(consSeg.length>1?sec('fuelcons','Consumption','L/100km between full tanks',lineChartSVG(consSeg.map(x=>dateLabel(x.date)),[{name:'L/100km',color:fcol,values:consSeg.map(x=>x.value)}],{unit:'dec1',height:140,avg:consSeg.reduce((a,x)=>a+x.value,0)/consSeg.length})):'');
-  const table=`${charts}<div class="section"><h3>Spend by month<small>${pm.length>6?periodLabel(mk):'six months'}</small></h3>${periodBar()}${groupedBarsSVG(months,[{name:'Fuel',color:fcol,values:stats.map(x=>x.cost)}],{height:150})}<table class="cmp"><thead><tr><th>Month</th><th>km</th><th>Litres</th><th>R/L</th><th>Spend</th></tr></thead><tbody>${stats.filter(s=>s.n).map(s=>`<tr><td>${monthShort(s.m)}</td><td>${Math.round(s.km).toLocaleString('en-ZA')}</td><td>${fmtNum(s.litres,1)}</td><td>${s.ppl?fmtNum(s.ppl/100,2):'—'}</td><td>${fmtShort(s.cost)}</td></tr>`).join('')}</tbody></table></div>`;
+  const consVals=consSeg.map(x=>kml?x.km/x.litres:x.litres/x.km*100);
+  const consTips=consSeg.map(x=>`${dateLabel(x.from)} to ${dateLabel(x.date)}: ${fmtNum(x.litres,3)} L over ${Math.round(x.km).toLocaleString('en-ZA')} km = ${fmtNum(x.litres/x.km*100,3)} L/100km, ${fmtNum(x.km/x.litres,3)} km/L${x.fills>1?` (${x.fills} fill-ups)`:''}`);
+  const charts=sec('fuelprice','Price per litre','what you paid, monthly average',lineChartSVG(months.map(monthShort),[{name:'R per litre',color:fcol,values:stats.map(x=>x.ppl?x.ppl/100:null)}],{unit:'dec2',height:140})||'<p class="note">Needs fill-ups in more than one month.</p>')+(consSeg.length>1?sec('fuelcons','Consumption',`${kml?'km/L':'L/100km'} between full tanks, tap a point for the exact figures`,lineChartSVG(consSeg.map(x=>Number(x.date.slice(8))+'/'+Number(x.date.slice(5,7))),[{name:kml?'km/L':'L/100km',color:fcol,values:consVals}],{unit:kml?'dec1':'dec1',height:140,tips:consTips,avg:consVals.reduce((a,v)=>a+v,0)/consVals.length})):'');
+  const table=`${charts}<div class="section"><h3>Spend by month<small>${periodLabel(mk)}</small></h3>${periodBar()}${months.length>1?groupedBarsSVG(months,[{name:'Fuel',color:fcol,values:stats.map(x=>x.cost)}],{height:150}):''}<table class="cmp"><thead><tr><th>Month</th><th>km</th><th>Litres</th><th>R/L</th><th>Spend</th></tr></thead><tbody>${stats.filter(s=>s.n).map(s=>`<tr><td>${monthShort(s.m)}</td><td>${Math.round(s.km).toLocaleString('en-ZA')}</td><td>${fmtNum(s.litres,1)}</td><td>${s.ppl?fmtNum(s.ppl/100,2):'—'}</td><td>${fmtShort(s.cost)}</td></tr>`).join('')}</tbody>${stats.filter(s=>s.n).length>1?`<tfoot><tr><td>Total</td><td>${Math.round(stats.reduce((a,s)=>a+s.km,0)).toLocaleString('en-ZA')}</td><td>${fmtNum(stats.reduce((a,s)=>a+s.litres,0),1)}</td><td>—</td><td>${fmtShort(stats.reduce((a,s)=>a+s.cost,0))}</td></tr></tfoot>`:''}</table></div>`;
   const rows=[...list].reverse().slice(0,40).map(f=>{const idx=list.indexOf(f);const prevF=idx>0?list[idx-1]:null;const km=prevF?f.odometer-prevF.odometer:null;return `<button class="item" data-act="fuel-edit" data-id="${f.id}"><span>${esc(f.station||'Fill-up')}<span class="sub">${dateLabel(f.date)}, ${fmtKm(f.odometer)}${km!=null?` (+${Math.round(km)} km)`:''}, ${fmtNum(f.litres,1)} L at ${fmtNum(f.pricePerL/100,2)}${f.full?'':', partial'}</span></span><span class="amt">${fmt(f.cost)}</span></button>`;}).join('');
   return `${head}${hero}${tiles}${table}<div class="section"><h3>Fill-ups</h3>${rows}</div>`;
 }
@@ -1264,29 +1296,32 @@ function openFuelPaste(){
     <p class="note">Paste as many as you like, one fill-up after another: a date line, then the distance, price per litre, litres and total in any order. Copied WhatsApp messages work as they are, and a "+42.4 km" line is added to that fill-up's distance.</p>
     <div class="row2"><div class="field"><label for="fpSt">Station</label><input id="fpSt" list="stations" autocomplete="off" value="${esc(defStation)}" placeholder="e.g. Radiokop BP"><datalist id="stations">${stations.map(x=>`<option value="${esc(x)}">`).join('')}</datalist></div><div class="field"><label for="fpAcc">Paid from</label><select id="fpAcc">${accOptions(defAcc)}</select></div></div>
     <div class="field"><label for="fpMode">The km figure is</label><select id="fpMode"><option value="trip">the distance driven since the previous fill-up</option><option value="odo">the odometer reading</option></select></div>
+    <div class="field" id="fpFixWrap" hidden><label class="chk"><input type="checkbox" id="fpFix">Correct the odometer on fill-ups already logged</label><span class="note">A fill-up already in Ledger with the same date and total keeps its litres and cost, and takes the odometer reading from what you pasted. Use this to put a mis-typed reading right across the whole history at once.</span></div>
     <div class="field" id="fpAnchorWrap"><label for="fpAnchor">Odometer at the most recent fill-up in the notes (km)</label><input id="fpAnchor" inputmode="numeric" placeholder="${last?`your latest logged fill-up reads ${last.odometer} on ${dateLabel(last.date)}`:'e.g. 84250'}"><span class="note">Earlier readings are worked back from this one. Leave it empty if you don't know it; costs and consumption still work, and you can correct the odometer later under Vehicle and service.</span></div>
     <div id="fpPrev"></div>`;
   openSheet('Paste fill-ups',html,`<button class="btn primary" id="fpGo" disabled>Import</button>`,{key:'fuelpaste',reopen:()=>openFuelPaste()});
   let parsed=[],anchorTouched=false;
   const preview=()=>{
     parsed=parseFuelText($('#fpText').value);
-    const mode=$('#fpMode').value;$('#fpAnchorWrap').hidden=mode!=='trip';
+    const mode=$('#fpMode').value;$('#fpAnchorWrap').hidden=mode!=='trip';$('#fpFixWrap').hidden=mode!=='odo';
     if(!anchorTouched&&parsed.length&&$('#fpAnchor').value===''){const m=S.fuel.find(f=>!f.deletedAt&&f.date===parsed[parsed.length-1].date);if(m){$('#fpAnchor').value=m.odometer;}}
     const anchor=parseNum($('#fpAnchor').value);
     if(mode==='odo')for(const e of parsed)e.odometer=Math.round(e.km);
     else if(anchor!=null&&parsed.length){let o=anchor;for(let i=parsed.length-1;i>=0;i--){parsed[i].odometer=Math.round(o);o-=parsed[i].km;}}
     else{const prior=fuelLive().filter(f=>parsed.length&&f.date<parsed[0].date);let o=prior.length?prior[prior.length-1].odometer:0;for(const e of parsed){o+=e.km;e.odometer=Math.round(o);}}
-    for(const e of parsed){e.dup=S.fuel.some(f=>!f.deletedAt&&f.date===e.date&&Math.abs(f.cost-e.cost)<=2);}
-    const fresh=parsed.filter(e=>!e.dup);
+    const fixOn=mode==='odo'&&$('#fpFix').checked;
+    for(const e of parsed){e.match=S.fuel.find(f=>!f.deletedAt&&f.date===e.date&&Math.abs(f.cost-e.cost)<=2)||null;e.dup=!!e.match;e.fix=!!(fixOn&&e.match&&e.match.odometer!==e.odometer);}
+    const fresh=parsed.filter(e=>!e.dup);const fixes=parsed.filter(e=>e.fix);
     const km=fresh.reduce((a,e)=>a+e.km,0),cost=fresh.reduce((a,e)=>a+e.cost,0),lit=fresh.reduce((a,e)=>a+e.litres,0);
-    $('#fpPrev').innerHTML=parsed.length?`<div class="counts"><span>Fill-ups<b>${fresh.length}</b></span><span>Already logged<b>${parsed.length-fresh.length}</b></span><span>Distance<b>${fmtKm(km)}</b></span><span>Total<b>${fmtShort(cost)}</b></span></div>
-      <table class="prev"><thead><tr><th>Date</th><th>km</th><th>Odo</th><th>L</th><th style="text-align:right">Total</th></tr></thead><tbody>${parsed.slice(0,60).map(e=>`<tr class="${e.dup?'bad':''}"><td>${dateLabel(e.date)}${e.adjusted?' +':''}</td><td>${fmtNum(e.km,1)}</td><td>${e.odometer}</td><td>${fmtNum(e.litres,2)}</td><td class="amt">${fmt(e.cost)}${e.dup?'<br><small>logged</small>':''}</td></tr>`).join('')}</tbody></table>${parsed.length>60?`<p class="note">Showing 60 of ${parsed.length}.</p>`:''}${lit?`<p class="note">${fmtNum(lit,1)} litres in all, ${km?`${fmtNum(lit/km*100,2)} L/100km overall`:''}.</p>`:''}`:($('#fpText').value.trim()?'<p class="note bad">No fill-ups recognised yet. Each needs a date, litres and either a total or a price per litre.</p>':'');
-    const go=$('#fpGo');go.disabled=!fresh.length;go.textContent=fresh.length?`Import ${fresh.length}`:'Import';
+    $('#fpPrev').innerHTML=parsed.length?`<div class="counts"><span>New fill-ups<b>${fresh.length}</b></span><span>Already logged<b>${parsed.length-fresh.length}</b></span>${fixOn?`<span>Odometers to fix<b>${fixes.length}</b></span>`:mode==='trip'?`<span>Distance<b>${fmtKm(km)}</b></span>`:''}<span>Total<b>${fmtShort(cost)}</b></span></div>
+      <table class="prev"><thead><tr><th>Date</th><th>${mode==='odo'?'Odo':'km'}</th><th>${fixOn?'Was':'Odo'}</th><th>L</th><th style="text-align:right">Total</th></tr></thead><tbody>${parsed.slice(0,60).map(e=>`<tr class="${e.fix?'':e.dup?'bad':''}"><td>${dateLabel(e.date)}${e.adjusted?' +':''}</td><td>${mode==='odo'?e.odometer.toLocaleString('en-ZA'):fmtNum(e.km,1)}</td><td>${fixOn?(e.match?e.match.odometer.toLocaleString('en-ZA'):'new'):e.odometer}</td><td>${fmtNum(e.litres,2)}</td><td class="amt">${fmt(e.cost)}${e.fix?'<br><small>odometer fixed</small>':e.dup?'<br><small>logged</small>':''}</td></tr>`).join('')}</tbody></table>${parsed.length>60?`<p class="note">Showing 60 of ${parsed.length}.</p>`:''}${lit?`<p class="note">${fmtNum(lit,1)} litres in all${mode==='trip'&&km?`, ${fmtNum(lit/km*100,2)} L/100km overall`:''}.</p>`:''}`:($('#fpText').value.trim()?'<p class="note bad">No fill-ups recognised yet. Each needs a date, litres and either a total or a price per litre.</p>':'');
+    const go=$('#fpGo');go.disabled=!fresh.length&&!fixes.length;go.textContent=fresh.length&&fixes.length?`Import ${fresh.length}, fix ${fixes.length}`:fresh.length?`Import ${fresh.length}`:fixes.length?`Fix ${fixes.length} odometer${fixes.length===1?'':'s'}`:'Import';
   };
-  $('#fpText').oninput=preview;$('#fpMode').onchange=preview;$('#fpAnchor').oninput=()=>{anchorTouched=true;preview();};
+  $('#fpText').oninput=preview;$('#fpMode').onchange=preview;$('#fpFix').onchange=preview;$('#fpAnchor').oninput=()=>{anchorTouched=true;preview();};
   $('#fpGo').onclick=async()=>{
-    const fresh=parsed.filter(e=>!e.dup);if(!fresh.length)return;
+    const fresh=parsed.filter(e=>!e.dup),fixes=parsed.filter(e=>e.fix);if(!fresh.length&&!fixes.length)return;
     const station=$('#fpSt').value.trim()||'Fuel',accountId=$('#fpAcc').value,now=nowISO(),fcat=fuelCatId()||'cat_uncat';
+    if(fixes.length){const changed=[];for(const e of fixes){e.match.odometer=e.odometer;e.match.updatedAt=now;changed.push(e.match);}await dbPutMany('fuel',changed);}
     const fuels=[],txns=[];let linked=0;
     for(const e of fresh){
       const f={id:uid(),date:e.date,odometer:e.odometer,litres:e.litres,cost:e.cost,pricePerL:e.pricePerL,station,full:true,note:e.adjusted?'distance includes a +km correction':'',createdAt:now,updatedAt:now};
@@ -1294,9 +1329,9 @@ function openFuelPaste(){
       if(t){linked++;}else t={id:uid(),accountId,date:e.date,amount:-e.cost,payee:station,categoryId:fcat,note:'',source:'manual',reviewed:true,createdAt:now,updatedAt:now};
       t.fuelId=f.id;t.updatedAt=now;f.transactionId=t.id;fuels.push(f);txns.push(t);
     }
-    await upsertTxns(txns);S.fuel.push(...fuels);await dbPutMany('fuel',fuels);await setMeta('lastAccountId',accountId);
-    closeSheet();switchTab('fuel');S.month=periodOf(fresh[fresh.length-1].date);render();
-    toast(`${fuels.length} fill-ups imported${linked?`, ${linked} linked to entries already in the Ledger`:''}`);
+    if(fuels.length){await upsertTxns(txns);S.fuel.push(...fuels);await dbPutMany('fuel',fuels);await setMeta('lastAccountId',accountId);}
+    closeSheet();switchTab('fuel');S.month=periodOf((fresh.length?fresh:fixes)[(fresh.length?fresh:fixes).length-1].date);render();
+    toast([fuels.length?`${fuels.length} fill-ups imported`:'',linked?`${linked} linked to entries already in the Ledger`:'',fixes.length?`${fixes.length} odometer${fixes.length===1?'':'s'} corrected`:''].filter(Boolean).join(', '));
   };
   setTimeout(()=>$('#fpText')?.focus(),50);
 }
@@ -1354,10 +1389,12 @@ function openFuelSettings(){
   const list=fuelLive();const last=list[list.length-1];
   const html=`<div class="field"><label for="fsVeh">Vehicle</label><input id="fsVeh" autocomplete="off" placeholder="e.g. Polo" value="${esc(fs.vehicle||'')}"></div>
     <div class="row2"><div class="field"><label for="fsLast">Last service at (km)</label><input id="fsLast" inputmode="numeric" placeholder="e.g. 75000" value="${fs.lastServiceKm??''}"></div><div class="field"><label for="fsInt">Service every (km)</label><input id="fsInt" inputmode="numeric" value="${fs.intervalKm||15000}"></div></div>
+    <div class="row2"><div class="field"><label for="fsDate">Last service on</label><input id="fsDate" type="date" value="${fs.lastServiceDate||''}"></div><div class="field"><label for="fsMonths">Service every (months)</label><input id="fsMonths" inputmode="numeric" placeholder="e.g. 12" value="${fs.intervalMonths??''}"></div></div>
     ${last?`<div class="field"><label for="fsOdo">Odometer at your latest fill-up, ${dateLabel(last.date)} (km)</label><input id="fsOdo" inputmode="numeric" value="${last.odometer}"><span class="note">If the fill-ups were pasted in without a real reading, put the true reading here: every fill-up is shifted by the same amount so distances stay right.</span></div>`:''}
-    <p class="note">The next service is due at the last service reading plus the interval. The expected date comes from how many kilometres a day you've been driving over roughly the last three months of fill-ups.</p>`;
+    <p class="note">Fill in either half, or both. The distance forecast is the last service reading plus the kilometre interval; its date comes from how many kilometres a day you've driven over roughly the last three months of fill-ups. The time forecast is the last service date plus the month interval. With both filled in, Fuel counts down to whichever comes first.</p>`;
   openSheet('Vehicle and service',html,`<button class="btn primary" id="fsSave">Save</button>`,{key:'fuelset',reopen:()=>openFuelSettings()});
-  $('#fsSave').onclick=async()=>{const lastKm=parseNum($('#fsLast').value);const int=parseNum($('#fsInt').value)||15000;await setMeta('fuel',{vehicle:$('#fsVeh').value.trim(),lastServiceKm:lastKm!=null?Math.round(lastKm):null,intervalKm:Math.round(int)});
+  $('#fsSave').onclick=async()=>{const lastKm=parseNum($('#fsLast').value);const int=parseNum($('#fsInt').value)||15000;const months=parseNum($('#fsMonths').value);
+    await setMeta('fuel',{vehicle:$('#fsVeh').value.trim(),lastServiceKm:lastKm!=null?Math.round(lastKm):null,intervalKm:Math.round(int),lastServiceDate:$('#fsDate').value||null,intervalMonths:months!=null&&months>0?Math.round(months):null});
     const odoIn=$('#fsOdo');if(odoIn&&last){const v=parseNum(odoIn.value);if(v!=null&&Math.round(v)!==last.odometer){const delta=Math.round(v)-last.odometer;if(await ask(`Shift every fill-up by ${delta>0?'+':''}${delta.toLocaleString('en-ZA')} km so the latest reads ${Math.round(v).toLocaleString('en-ZA')} km?`,'Shift')){const all=S.fuel.filter(f=>!f.deletedAt);for(const f of all){f.odometer+=delta;f.updatedAt=nowISO();}await dbPutMany('fuel',all);}}}
     sheetDone();render();toast('Saved');};
 }
@@ -1449,6 +1486,7 @@ const ACTIONS={
   'fuel-settings':()=>openFuelSettings(),
   'fuel-paste':()=>openFuelPaste(),
   'fuel-menu':()=>openFuelMenu(),
+  'cons-unit':async()=>{await setMeta('consUnit',S.meta.consUnit==='kml'?'l100':'kml');render();},
   'share-app':async()=>{const url=location.origin+location.pathname;const text='Ledger, a budgeting app that keeps everything on your own phone. Open this on your phone in Chrome and choose Install app:';try{if(navigator.share){await navigator.share({title:'Ledger',text,url});return;}}catch(e){if(e&&e.name==='AbortError')return;}try{await navigator.clipboard.writeText(url);toast('Link copied');}catch{toast(url,{duration:8000});}},
   'pin-set':()=>newPinFlow(false),
   'pin-change':()=>newPinFlow(true),
@@ -1473,7 +1511,7 @@ $('#sheet').addEventListener('click',e=>{if(e.target===$('#sheet'))closeSheet();
 document.addEventListener('keydown',e=>{if(e.key!=='Enter'||$('#sheet').hidden)return;const t=e.target;if(!t||!t.matches||!t.matches('#sheet input:not([type=file])'))return;const p=$('#sheet .foot .btn.primary');if(p&&!p.disabled){e.preventDefault();t.blur();p.click();}});
 let tipTimer=null,tipEl=null;
 function hideTip(){const t=$('#tip');t.hidden=true;if(tipEl){tipEl.classList.remove('sel');tipEl=null;}clearTimeout(tipTimer);}
-function showTip(el,text){const t=$('#tip');if(tipEl)tipEl.classList.remove('sel');tipEl=el;el.classList.add('sel');t.textContent=text;t.hidden=false;const r=el.getBoundingClientRect();const w=t.offsetWidth||120;const half=w/2+8;t.style.left=Math.max(half,Math.min(window.innerWidth-half,r.left+r.width/2))+'px';t.style.top=Math.max(52,r.top)+'px';clearTimeout(tipTimer);tipTimer=setTimeout(hideTip,4000);}
+function showTip(el,text){const t=$('#tip');if(tipEl)tipEl.classList.remove('sel');tipEl=el;el.classList.add('sel');t.textContent=text;t.hidden=false;const r=el.getBoundingClientRect();const w=t.offsetWidth||120;const half=w/2+8;t.style.left=Math.max(half,Math.min(window.innerWidth-half,r.left+r.width/2))+'px';t.style.top=Math.max(52+(t.offsetHeight||28),r.top)+'px';clearTimeout(tipTimer);tipTimer=setTimeout(hideTip,4000);}
 document.addEventListener('click',e=>{const tipped=e.target.closest&&e.target.closest('[data-tip]');if(tipped&&!e.target.closest('[data-act]')){showTip(tipped,tipped.getAttribute('data-tip'));return;}if(!$('#tip').hidden)hideTip();});
 window.addEventListener('scroll',()=>{if(!$('#tip').hidden)hideTip();},{passive:true});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('#sheet').hidden)closeSheet();});
@@ -1998,7 +2036,7 @@ async function init(){
   }
 }
 window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredInstall=e;if(S.tab==='more')render();});
-window.Ledger={S,fn:{parseCSV,parseDate,parseAmount,detectTable,guessMapping,parseImportRows,runImport,rollbackImport,loadImportText,openImporter,renderPreview,upsertTxns,deleteTxn,setBudget,monthTotals,spentFor,spentTop,spentLeaf,effectiveLimit,projectionFor,insights,accountBalance,backupJSON,restoreData,applyRules,cleanPayee,render,openTxnSheet,saveTxnForm,openAccountSheet,openCategoriesList,openCategorySheet,openCatDetail,setMeta,openFuelSheet,openFuelSettings,fuelStats,consumption,consumptionSeries,drivingPace,serviceForecast,fuelCatId,topCats,childrenOf,statusOf,periodMonths,periodLabel,leafMapFor,topMapFor,totalsFor,payeesFor,openPayeeDetail,openDayDetail,openGeneralDetail,ask,partsOf,rollFor,availableLimit,transactionsCSV,fuelCSV,mainAccount,periodOf,periodStart,periodEnd,periodDays,dayInPeriod,curPeriod,askText,setPin,verifyPin,lockNow,tryPin,encryptText,decryptText,newPinFlow,removePinFlow,parseFuelText,openFuelPaste,openFuelMenu,showTip,hideTip,limitStatusFor,limitedTotals,generateScheduled,runScheduled,nextScheduledDate,openScheduleSheet,limitFor,limitSince,recurringPayees,sankeySVG,treemapSVG,netWorthSeries,homeLayout,openLayoutSheet,openRecurringSheet,switchTab,sheetBack,sheetDone,burnUpSVG,heatmapHTML,weekdayProfile,stackedBarsSVG,get SHEETS(){return SHEETS;},donutSVG,ringSVG,groupedBarsSVG,lineChartSVG,get IMP(){return IMP;},set IMP(v){IMP=v;}}};
+window.Ledger={S,fn:{parseCSV,parseDate,parseAmount,detectTable,guessMapping,parseImportRows,runImport,rollbackImport,loadImportText,openImporter,renderPreview,upsertTxns,deleteTxn,setBudget,monthTotals,spentFor,spentTop,spentLeaf,effectiveLimit,projectionFor,insights,accountBalance,backupJSON,restoreData,applyRules,cleanPayee,render,openTxnSheet,saveTxnForm,openAccountSheet,openCategoriesList,openCategorySheet,openCatDetail,setMeta,openFuelSheet,openFuelSettings,fuelStats,consumption,consumptionSeries,drivingPace,serviceForecast,fuelCatId,topCats,childrenOf,statusOf,periodMonths,periodLabel,leafMapFor,topMapFor,totalsFor,payeesFor,openPayeeDetail,openDayDetail,openGeneralDetail,ask,partsOf,rollFor,availableLimit,transactionsCSV,fuelCSV,mainAccount,periodOf,periodStart,periodEnd,periodDays,dayInPeriod,curPeriod,askText,setPin,verifyPin,lockNow,tryPin,encryptText,decryptText,newPinFlow,removePinFlow,parseFuelText,openFuelPaste,openFuelMenu,addMonthsDate,spanText,dateWithYear,showTip,hideTip,limitStatusFor,limitedTotals,generateScheduled,runScheduled,nextScheduledDate,openScheduleSheet,limitFor,limitSince,recurringPayees,sankeySVG,treemapSVG,netWorthSeries,homeLayout,openLayoutSheet,openRecurringSheet,switchTab,sheetBack,sheetDone,burnUpSVG,heatmapHTML,weekdayProfile,stackedBarsSVG,get SHEETS(){return SHEETS;},donutSVG,ringSVG,groupedBarsSVG,lineChartSVG,get IMP(){return IMP;},set IMP(v){IMP=v;}}};
 window.LedgerReady=init().catch(e=>{console.error(e);$('#view').innerHTML=`<p class="empty bad">Ledger couldn't open its storage: ${esc(e.message||e)}. Try a different browser, or check that private browsing is off.</p>`;});
 </script>
 </body>
